@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ant Annihilator tests</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; background: #14180f; color: #e8eedd; margin: 0; padding: 24px; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  #summary { margin: 0 0 16px; color: #b8c4a8; }
+  #summary.pass { color: #7ee07a; } #summary.fail { color: #ff6a5a; }
+  ol { padding-left: 22px; } li { margin: 4px 0; }
+  .pass::marker, .pass b { color: #7ee07a; } .fail::marker, .fail b { color: #ff6a5a; }
+  .err { display: block; color: #ffb0a8; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
+  iframe { position: fixed; right: 12px; bottom: 12px; width: 480px; height: 300px; border: 1px solid #3a4430; }
+</style>
+</head>
+<body>
+<h1>Ant Annihilator tests</h1>
+<p id="summary">Loading the game...</p>
+<ol id="list"></ol>
+<script src="game-tests.js"></script>
+<script>
+// Loads a copy of ../dist/index.html with a test hook appended to its module script, so the
+// shipped game has no debug code in it. Results end up in window.__testResults.
+const GAME = '../dist/index.html';
+const HOOK_AT = 'frame();\n<\/script>';
+const EXPOSE = `state, player, up, keys, hud, mines, ants: () => ants, sa: () => screenAnts,
+  killAnt, damageAnt, spawnAnt, plantMine, explosion, laserTick, startBleed, resetGame,
+  UPGRADES, STREAM_DMG, goldenWave, lateSugarMult, queenBlasterMult, rangeMult, trapLife,
+  bDelay, bDmg, sDmg, zDmg, zChain, JUMP_STAMINA, JUMP_CD, BLEED_DMG, BLEED_TIME, TANKY_SNIPER_MULT`;
+const LIB_KEY = 'antAnnihilator.discovered';
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const results = [];
+window.__testResults = { done: false, passed: 0, failed: 0, results };
+
+function report(name, ok, err) {
+  results.push({ name, ok, error: err ? String(err.message || err) : null });
+  const li = document.createElement('li');
+  li.className = ok ? 'pass' : 'fail';
+  li.innerHTML = `<b>${ok ? 'PASS' : 'FAIL'}</b> ${name}`;
+  if (err) { const e = document.createElement('span'); e.className = 'err'; e.textContent = err.message || err; li.append(e); }
+  document.getElementById('list').append(li);
+}
+
+async function loadGame() {
+  let src = await (await fetch(GAME, { cache: 'no-store' })).text();
+  const base = new URL(GAME, location.href).href;
+  src = src.replace('<head>', `<head><base href="${base}"><script>window.__errors=[];` +
+    `addEventListener('error',e=>__errors.push(e.message+' @'+e.lineno));` +
+    `addEventListener('unhandledrejection',e=>__errors.push(String(e.reason)));<\/script>`);
+  const at = src.lastIndexOf(HOOK_AT);
+  if (at < 0) throw new Error(`Could not find "${HOOK_AT.replace('\n', '\\n')}" in ${GAME} to attach the test hook`);
+  src = src.slice(0, at) + `frame();\nwindow.__game = { ${EXPOSE} };\n<\/script>` + src.slice(at + HOOK_AT.length);
+  const frame = document.createElement('iframe');
+  document.body.append(frame);
+  frame.srcdoc = src;
+  const w = frame.contentWindow;
+  for (let t = 0; t < 300 && !w.__game; t++) {
+    if (w.__errors?.length) throw new Error('Game failed to start: ' + w.__errors.join('; '));
+    await sleep(100);
+  }
+  if (!w.__game) throw new Error('Game did not start within 30s (is the Three.js CDN reachable?)');
+  return w;
+}
+
+function helpers(g) {
+  const h = {
+    sleep,
+    // waits for `sec` seconds of game time, so slow machines still simulate the same amount
+    async game(sec) {
+      const end = g.state.time + sec;
+      for (let t = 0; t < 600 && g.state.time < end; t++) await sleep(25);
+    },
+    async until(cond, ms, msg) {
+      for (let t = 0; t < ms; t += 20) { if (cond()) return; await sleep(20); }
+      throw new Error(msg);
+    },
+    // start a quiet game: one wave, no spawning, empty field, full stamina
+    async fresh() {
+      g.keys.Space = false;
+      g.resetGame();
+      g.state.mode = 'playing';
+      g.state.toSpawn = ['worker']; g.state.spawnTimer = 999; g.state.goldenTimer = -1;
+      await sleep(50);
+      for (const a of [...g.ants()]) g.killAnt(a);
+      for (const a of [...g.ants()]) g.killAnt(a);
+      g.sa().length = 0;
+      g.player.pos.set(-20, 0, 26); g.player.vel.set(0, 0, 0);
+      await sleep(50);
+    },
+    spawn(type, x, z) {
+      g.spawnAnt(type);
+      const a = g.ants()[g.ants().length - 1];
+      a.root.position.set(x, 0, z);
+      return a;
+    },
+    hit(ant, dmg, kind) {
+      const before = ant.hp;
+      g.damageAnt(ant, dmg, { kind, silent: true });
+      return before - ant.hp;
+    },
+  };
+  return h;
+}
+
+(async () => {
+  const savedLib = localStorage.getItem(LIB_KEY);
+  const summary = document.getElementById('summary');
+  try {
+    const w = await loadGame();
+    const g = w.__game, h = helpers(g);
+    w.document.body.classList.remove('title');
+    g.hud.menu.style.display = 'none';
+    summary.textContent = `Running ${GAME_TESTS.length} tests...`;
+    for (const t of GAME_TESTS) {
+      try { await t.fn(g, h); report(t.name, true); }
+      catch (e) { report(t.name, false, e); }
+    }
+    if (w.__errors.length) report('No errors thrown while the game ran', false, new Error(w.__errors.join('\n')));
+    else report('No errors thrown while the game ran', true);
+  } catch (e) {
+    report('Load the game', false, e);
+  } finally {
+    if (savedLib === null) localStorage.removeItem(LIB_KEY); else localStorage.setItem(LIB_KEY, savedLib);
+  }
+  const passed = results.filter(r => r.ok).length, failed = results.length - passed;
+  Object.assign(window.__testResults, { done: true, passed, failed });
+  summary.textContent = failed ? `${failed} of ${results.length} failed` : `All ${passed} passed`;
+  summary.className = failed ? 'fail' : 'pass';
+})();
+</script>
+</body>
+</html>

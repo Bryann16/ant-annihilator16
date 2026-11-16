@@ -1,0 +1,3501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ant Annihilator</title>
+<style>
+  :root { --panel: rgba(12,16,10,0.6); --line: rgba(255,255,255,0.14); --gold: #ffd84a; --green: #7dff5a; --red: #ff5a3c; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: "Segoe UI", "Trebuchet MS", system-ui, sans-serif; user-select: none; color: #fff; }
+  canvas#gl { display: block; }
+  #overlay { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(200,0,0,0.75) 100%); }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 28px; height: 28px; transform: translate(-50%,-50%); z-index: 6; pointer-events: none; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff; box-shadow: 0 0 2px #000; }
+  #crosshair::before { left: 13px; top: 0; width: 2px; height: 28px; clip-path: polygon(0 0,100% 0,100% 36%,0 36%,0 64%,100% 64%,100% 100%,0 100%); }
+  #crosshair::after { top: 13px; left: 0; height: 2px; width: 28px; clip-path: polygon(0 0,36% 0,36% 100%,0 100%,0 0,64% 0,100% 0,100% 100%,64% 100%); }
+  #crosshair.ring::before { left: 0; top: 0; width: 28px; height: 28px; background: none; border: 2px solid #fff; border-radius: 50%; clip-path: none; box-shadow: 0 0 2px #000, inset 0 0 2px #000; }
+  #crosshair.ring::after { left: 12px; top: 12px; width: 4px; height: 4px; border-radius: 50%; clip-path: none; }
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%,-50%) rotate(45deg); z-index: 6; opacity: 0; pointer-events: none; }
+  #hitmarker::before, #hitmarker::after { content: ""; position: absolute; background: #ff4; }
+  #hitmarker::before { left: 14px; top: 0; width: 2px; height: 30px; clip-path: polygon(0 0,100% 0,100% 30%,0 30%,0 70%,100% 70%,100% 100%,0 100%); }
+  #hitmarker::after { top: 14px; left: 0; height: 2px; width: 30px; clip-path: polygon(0 0,30% 0,30% 100%,0 100%,0 0,70% 0,100% 0,100% 100%,70% 100%); }
+
+  body.title .hud, body.title #crosshair { display: none; }
+  .hud { position: fixed; z-index: 7; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; backdrop-filter: blur(6px); box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+  .lbl { font-size: 11px; letter-spacing: 2px; opacity: 0.75; text-transform: uppercase; font-weight: 700; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .bar { height: 12px; background: rgba(0,0,0,0.45); border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.18); margin-top: 5px; }
+  .bar > div { height: 100%; width: 100%; transition: width 0.12s; }
+  .bar.thin { height: 6px; }
+  .gold { color: var(--gold); }
+
+  #p-wave { top: 16px; left: 16px; width: 240px; }
+  #p-wave .wv { font-size: 30px; font-weight: 900; line-height: 1; }
+  #p-wave .wv small { font-size: 16px; opacity: 0.6; font-weight: 700; }
+  #waveprog { background: linear-gradient(90deg, #ffb02a, #ffd84a); }
+  #p-wave .stats { margin-top: 8px; gap: 10px; }
+  #p-wave .stats b { display: block; font-size: 22px; font-weight: 900; }
+  #combo { font-size: 18px; color: var(--gold); font-weight: 900; height: 22px; margin-top: 4px; }
+  #rage { display: none; margin-top: 4px; padding: 3px 8px; border-radius: 6px; background: rgba(200,20,10,0.55); border: 1px solid #ff5a3c; color: #fff; font-weight: 900; font-size: 13px; letter-spacing: 2px; text-align: center; }
+
+  #p-map { top: 16px; right: 16px; width: 182px; text-align: center; padding: 10px; }
+  #minimap { width: 160px; height: 160px; display: block; margin: 0 auto; }
+  #p-map .row { margin-top: 6px; }
+  #antsleft { font-size: 20px; font-weight: 900; }
+
+  #p-health { bottom: 16px; left: 16px; width: 340px; }
+  #hpfill { background: linear-gradient(90deg, #3ddc4a, #a6f05a); }
+  #hptxt { font-weight: 800; font-size: 14px; }
+  #stbar { margin-top: 4px; }
+  #stfill { background: linear-gradient(90deg, #3ab0ff, #8fe0ff); transition: width 0.08s; }
+  #stbar.tired #stfill { background: linear-gradient(90deg, #ff6a3a, #ffb05a); animation: pulse 0.6s infinite; }
+  .cds { display: flex; gap: 6px; margin-top: 9px; }
+  .cd { position: relative; flex: 1; font-size: 11px; font-weight: 700; text-align: center; padding: 5px 0 6px; border-radius: 7px; background: rgba(0,0,0,0.45); overflow: hidden; border: 1px solid rgba(255,255,255,0.1); }
+  .cd b { color: var(--gold); margin-right: 3px; }
+  .cd i { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); width: 100%; }
+  .cd.wait { opacity: 0.55; }
+  .cd.off { opacity: 0.3; }
+
+  #hotbar { bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+  @media (max-width: 1420px) { #hotbar { bottom: 128px; } }
+  .slot { width: 88px; padding: 6px 9px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(6px); }
+  .slot .k { font-size: 11px; color: var(--gold); font-weight: 900; }
+  .slot .n { font-size: 12px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot .a { font-size: 11px; opacity: 0.8; }
+  .slot.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold), 0 0 16px rgba(255,216,74,0.35); background: rgba(40,34,10,0.7); }
+  .slot.locked { opacity: 0.35; }
+
+  #p-ammo { bottom: 16px; right: 16px; width: 230px; text-align: right; }
+  #ammo { font-size: 40px; font-weight: 900; line-height: 1.05; }
+  #ammosub { background: linear-gradient(90deg, #7dff5a, #c8ff6a); }
+
+  #center-msg { position: fixed; top: 27%; width: 100%; text-align: center; z-index: 7; pointer-events: none;
+    text-shadow: 0 3px 10px rgba(0,0,0,0.9); opacity: 0; transition: opacity 0.3s; }
+  #center-msg .t { font-size: 58px; font-weight: 900; letter-spacing: 3px; }
+  #center-msg .s { font-size: 21px; margin-top: 6px; color: var(--gold); font-weight: 700; }
+  #onscreen-warn { position: fixed; bottom: 120px; width: 100%; text-align: center; z-index: 7; color: var(--red); font-weight: 900;
+    font-size: 18px; letter-spacing: 2px; text-shadow: 0 2px 6px #000; pointer-events: none; opacity: 0; }
+
+  #menu { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(20,30,10,0.7), rgba(0,0,0,0.92)); cursor: pointer; }
+  #menu .panel { text-align: center; max-width: 820px; padding: 30px 40px; background: rgba(10,14,8,0.7); }
+  #menu h1 { font-size: 74px; font-weight: 900; letter-spacing: 4px; color: var(--gold); text-shadow: 0 4px 0 #7a3b00, 0 10px 24px #000; }
+  #menu h2 { font-size: 20px; margin: 8px 0 20px; color: #cfe; font-weight: 400; }
+  #menu .controls { display: grid; grid-template-columns: auto auto auto auto; gap: 6px 18px; text-align: left; margin: 0 auto 22px; width: fit-content;
+    background: rgba(255,255,255,0.05); padding: 14px 20px; border-radius: 10px; font-size: 14px; border: 1px solid var(--line); }
+  #menu .controls b { color: var(--gold); white-space: nowrap; }
+  #menu .cta { display: inline-block; font-size: 24px; font-weight: 900; padding: 12px 40px; border-radius: 10px; background: #e8452a; letter-spacing: 2px; animation: pulse 1.4s infinite; }
+  #menu .stats { font-size: 22px; margin-bottom: 16px; color: var(--gold); font-weight: 700; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+
+  #shop { position: fixed; inset: 0; z-index: 11; display: none; align-items: center; justify-content: center; background: rgba(4,8,4,0.9); cursor: default; }
+  .shop-box { width: min(1240px, 97vw); height: min(820px, 96vh); display: flex; flex-direction: column; background: rgba(16,22,14,0.95); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .shop-head { display: flex; align-items: center; gap: 24px; padding: 14px 22px; border-bottom: 1px solid var(--line); background: rgba(0,0,0,0.25); }
+  .shop-head h1 { font-size: 32px; color: var(--gold); letter-spacing: 3px; }
+  .shop-head .sub { font-size: 14px; opacity: 0.7; }
+  .shop-head .cash { margin-left: auto; text-align: right; }
+  .shop-head .cash b { display: block; font-size: 34px; color: var(--gold); line-height: 1; }
+  #shop-go { padding: 14px 30px; font-size: 20px; font-weight: 900; border: none; border-radius: 10px; background: #e8452a; color: #fff; cursor: pointer; letter-spacing: 1.5px; font-family: inherit; }
+  #shop-go:hover { background: #ff5a3c; }
+  .lib-btn { padding: 12px 20px; font-size: 16px; font-weight: 900; border: 1px solid var(--gold); border-radius: 10px; background: rgba(255,216,74,0.12); color: var(--gold); cursor: pointer; letter-spacing: 1px; font-family: inherit; }
+  .lib-btn:hover { background: rgba(255,216,74,0.25); }
+  .lib-btn .new { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: #e8452a; color: #fff; font-size: 11px; vertical-align: middle; }
+  #menu .lib-btn { display: block; margin: 14px auto 0; }
+  #library { position: fixed; inset: 0; z-index: 12; display: none; align-items: center; justify-content: center; background: rgba(4,8,4,0.92); cursor: default; }
+  #library .shop-head .sub b { color: var(--gold); }
+  #lib-close { margin-left: auto; padding: 12px 26px; font-size: 18px; font-weight: 900; border: none; border-radius: 10px; background: #e8452a; color: #fff; cursor: pointer; font-family: inherit; }
+  #lib-grid { flex: 1; overflow-y: auto; padding: 16px 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; align-content: start; }
+  .ant-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.13); border-radius: 12px; padding: 12px 14px; font-size: 13px; }
+  .ant-card.unknown { opacity: 0.45; }
+  .ant-card .hd { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .ant-card .dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); flex: none; }
+  .ant-card .nm { font-weight: 900; font-size: 16px; }
+  .ant-card .wv { font-size: 11px; opacity: 0.7; }
+  .ant-card .intro { opacity: 0.8; font-style: italic; margin-bottom: 8px; }
+  .ant-card .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; margin-bottom: 6px; }
+  .ant-card .grid div { display: flex; justify-content: space-between; }
+  .ant-card .grid span { opacity: 0.7; }
+  .ant-card .ab { color: #9fe07a; margin-top: 2px; }
+  .ant-card .rs { color: #ffcf6a; margin-top: 2px; }
+  .shop-body { flex: 1; display: flex; min-height: 0; }
+  .intel { width: 270px; padding: 16px 18px; border-right: 1px solid var(--line); overflow-y: auto; font-size: 14px; background: rgba(0,0,0,0.15); }
+  .intel h3 { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #9fe07a; margin: 14px 0 6px; }
+  .intel h3:first-child { margin-top: 0; }
+  .intel .big { font-size: 26px; font-weight: 900; }
+  .intel .warn { color: #ff8a5a; font-weight: 800; margin-top: 4px; }
+  .intel .sp { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .intel .sw { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.5); flex: none; }
+  .intel .stat { display: flex; justify-content: space-between; margin: 3px 0; opacity: 0.9; }
+  .shop-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .tabs { display: flex; gap: 6px; padding: 12px 18px 0; }
+  .tabs button { padding: 9px 20px; border: 1px solid var(--line); border-bottom: none; border-radius: 10px 10px 0 0; background: rgba(255,255,255,0.05); color: #ddd; font-weight: 800; font-size: 15px; cursor: pointer; font-family: inherit; letter-spacing: 1px; }
+  .tabs button.on { background: rgba(255,216,74,0.15); color: var(--gold); border-color: rgba(255,216,74,0.5); }
+  #shop-grid { flex: 1; overflow-y: auto; padding: 14px 18px 18px; border-top: 1px solid var(--line); }
+  .sec { margin-bottom: 16px; }
+  .sec h3 { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: #9fe07a; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+  .chip { font-size: 10px; padding: 2px 8px; border-radius: 20px; background: rgba(255,255,255,0.1); color: #ddd; letter-spacing: 1px; }
+  .chip.own { background: rgba(125,255,90,0.2); color: var(--green); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+  .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.13); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; }
+  .card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .card .nm { font-weight: 800; font-size: 15px; }
+  .card .lv { font-size: 11px; color: var(--gold); font-weight: 800; white-space: nowrap; }
+  .card .lvbar { height: 4px; background: rgba(0,0,0,0.4); border-radius: 2px; margin: 6px 0 4px; overflow: hidden; }
+  .card .lvbar i { display: block; height: 100%; background: var(--gold); }
+  .card .ds { font-size: 12.5px; opacity: 0.85; flex: 1; margin-top: 4px; min-height: 32px; }
+  .card button { margin-top: 8px; width: 100%; padding: 7px; border: none; border-radius: 7px; font-weight: 800; font-size: 13px; cursor: pointer; background: var(--gold); color: #3a2200; font-family: inherit; }
+  .card button:hover:not(:disabled) { background: #ffe680; }
+  .card button:disabled { background: #444; color: #999; cursor: not-allowed; }
+  .card.maxed { border-color: rgba(125,255,90,0.35); }
+  .card.maxed button { background: #2f6b2a; color: #cfe; }
+</style>
+<script type="importmap">
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  } }
+</script>
+</head>
+<body class="title">
+<canvas id="gl"></canvas>
+<div id="vignette"></div>
+<canvas id="overlay"></canvas>
+<div id="crosshair"></div>
+<div id="hitmarker"></div>
+
+<div class="hud panel" id="p-wave">
+  <div class="row"><span class="lbl">Wave</span><span class="wv" id="wave">1<small> / 30</small></span></div>
+  <div class="bar thin"><div id="waveprog"></div></div>
+  <div class="row stats">
+    <div><span class="lbl">Score</span><b id="score">0</b></div>
+    <div style="text-align:right"><span class="lbl">Sugar</span><b id="sugar" class="gold">0</b></div>
+  </div>
+  <div id="combo"></div>
+  <div id="rage">COLONY ENRAGED</div>
+</div>
+<div class="hud panel" id="p-map">
+  <canvas id="minimap"></canvas>
+  <div class="row"><span class="lbl">Ants left</span><span id="antsleft">0</span></div>
+</div>
+<div class="hud panel" id="p-health">
+  <div class="row"><span class="lbl">Health</span><span id="hptxt">100 / 100</span></div>
+  <div class="bar"><div id="hpfill"></div></div>
+  <div class="bar thin" id="stbar"><div id="stfill"></div></div>
+  <div class="cds">
+    <div class="cd" id="cd-shoe"><b>RMB</b>Shoe<i></i></div>
+    <div class="cd" id="cd-slap"><b>F</b>Slap<i></i></div>
+    <div class="cd" id="cd-mine"><b>G</b>Mine x0<i></i></div>
+    <div class="cd" id="cd-trap"><b>T</b>Trap x0<i></i></div>
+  </div>
+</div>
+<div class="hud" id="hotbar"></div>
+<div class="hud panel" id="p-ammo">
+  <div class="lbl" id="wname">Bug Blaster</div>
+  <div id="ammo">30 / 30</div>
+  <div class="bar thin"><div id="ammosub"></div></div>
+</div>
+<div id="center-msg"><div class="t" id="cm-t"></div><div class="s" id="cm-s"></div></div>
+<div id="onscreen-warn">ANTS ON YOUR SCREEN! SHOOT THEM OR PRESS F TO SLAP</div>
+
+<div id="menu">
+  <div class="panel">
+    <h1>ANT ANNIHILATOR</h1>
+    <h2 id="menu-sub">Squish every last ant across 30 waves.</h2>
+    <div class="stats" id="menu-stats"></div>
+    <div class="controls">
+      <b>Mouse</b><span>Look / aim</span>
+      <b>Left Click</b><span>Fire</span>
+      <b>Right Click</b><span>Shoe smack</span>
+      <b>1 - 7 / Wheel</b><span>Switch weapon</span>
+      <b>W A S D</b><span>Move</span>
+      <b>Shift</b><span>Sprint</span>
+      <b>Space</b><span>Jump + stomp</span>
+      <b>R</b><span>Reload</span>
+      <b>G</b><span>Plant land mine</span>
+      <b>F</b><span>Slap ants off screen</span>
+      <b>T</b><span>Place ant trap (near a nest)</span>
+      <b>Esc</b><span>Pause</span>
+      <b>Enter</b><span>Start next wave</span>
+      <b></b><span></span>
+    </div>
+    <div class="cta" id="menu-cta">CLICK TO PLAY</div>
+    <button class="lib-btn" data-lib>ANT LIBRARY</button>
+  </div>
+</div>
+
+<div id="library">
+  <div class="shop-box">
+    <div class="shop-head">
+      <div><h1>ANT LIBRARY</h1><div class="sub" id="lib-sub"></div></div>
+      <button id="lib-close">CLOSE</button>
+    </div>
+    <div id="lib-grid"></div>
+  </div>
+</div>
+
+<div id="shop">
+  <div class="shop-box">
+    <div class="shop-head">
+      <div><h1>UPGRADE SHOP</h1><div class="sub" id="shop-sub">Wave 1 cleared</div></div>
+      <div class="cash"><span class="lbl">Sugar</span><b id="shop-sugar">0</b></div>
+      <button class="lib-btn" data-lib>ANT LIBRARY</button>
+      <button id="shop-go">START WAVE 2</button>
+    </div>
+    <div class="shop-body">
+      <div class="intel" id="shop-intel"></div>
+      <div class="shop-main">
+        <div class="tabs" id="shop-tabs"></div>
+        <div id="shop-grid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ============================================================
+// CONFIG
+// ============================================================
+const ARENA = 28;
+const HILLS = [[-22, -22], [22, -22], [-22, 22], [22, 22], [0, -25], [0, 25], [-25, 0], [25, 0]];
+const MAX_WAVES = 30;
+const MAX_ALIVE = 120;
+const ANT_DAMAGE_MULT = 0.75; // scales every bite, spit and explosion from ants
+const ANT_HP_MULT = 1.0;
+const ANT_SPEED_MULT = 0.97;
+const RAGE_SPEED = 1.35, RAGE_DMG = 1.35, RAGE_HP = 1.25; // after every queen in the wave is dead
+const GOLDEN_EVERY = 3, GOLDEN_LAST_WAVE = 15;
+const goldenWave = n => n % GOLDEN_EVERY === 0 && n <= GOLDEN_LAST_WAVE;
+const QUEEN_WAVES = { 5: 1, 10: 1, 15: 1, 20: 2, 25: 2, 30: 4 };
+// the final wave is a gauntlet: more ants, tougher, faster, more queens
+const isFinal = n => n === MAX_WAVES;
+const FINAL_HP = 1.35, FINAL_SPEED = 1.1, FINAL_COUNT = 1.5;
+// after wave 10, every wave makes ants tougher and a little faster
+const lateHpMult = n => (n > 10 ? 1 + 0.06 * (n - 10) : 1) * (isFinal(n) ? FINAL_HP : 1);
+const lateSpeedMult = n => (n > 10 ? Math.min(1.2, 1 + 0.01 * (n - 10)) : 1) * (isFinal(n) ? FINAL_SPEED : 1);
+const lateSugarMult = n => 1 - 0.025 * Math.min(10, Math.max(0, n - 10)) - 0.04 * Math.max(0, n - 20);
+const waveCount = n => Math.round((8 + 4 * Math.min(n, 20) + 3 * Math.max(0, n - 20)) * (isFinal(n) ? FINAL_COUNT : 1));
+// queens keep their base stats on waves 5 and 10, then every later queen wave makes them stronger
+const queenTier = n => Math.max(0, Math.floor((n - 10) / 5)) + (isFinal(n) ? 1 : 0);
+const queenBoost = n => {
+  const t = queenTier(n);
+  // the first two queens (waves 5 and 10) are slightly weaker than base
+  if (t === 0) return { hp: 0.9, dmg: 0.9, regen: 0.85, speed: 1, spawnCd: 3.6, brood: 2 };
+  return { hp: 1 + 0.35 * t, dmg: 1 + 0.12 * t, regen: 1 + 0.25 * t, speed: 1 + 0.05 * t, spawnCd: 3.2 / (1 + 0.15 * t), brood: 2 + Math.floor(t / 2) };
+};
+
+// scale, speed and hp are [min, max]; every ant rolls its own values.
+// weight = how common the species is once it has appeared (minWave).
+// resist: damage multiplier per damage kind (0 = immune, 2 = takes double).
+const ANT_TYPES = {
+  worker:     { name: 'Black Garden Ant', scale: [0.85, 1.15], speed: [2.0, 3.0], hp: [1, 2], dmg: 4, score: 10, sugar: 3,
+                head: 1.0, abd: 1.0, color: 0x2a2622, hueJitter: 0.03, minWave: 1, weight: 10 },
+  runner:     { name: 'Fire Ant', intro: 'Small, red and FAST', scale: [0.7, 0.95], speed: [3.75, 5.0], hp: [1, 1], dmg: 5, score: 20, sugar: 5,
+                head: 1.0, abd: 0.9, color: 0xd42a10, hueJitter: 0.02, minWave: 2, weight: 6, resist: { laser: 0.25 } },
+  sugar:      { name: 'Sugar Ant', intro: 'Tiny, twitchy and hard to hit', scale: [0.5, 0.65], speed: [4.7, 6.11], hp: [1, 1], dmg: 2, score: 25, sugar: 6,
+                head: 1.1, abd: 0.85, color: 0xe8c25a, hueJitter: 0.03, wander: 1.4, minWave: 2, weight: 4 },
+  weaver:     { name: 'Green Weaver Ant', intro: 'Spins sticky silk webs that slow you down', scale: [0.8, 1.0], speed: [3.2, 4.0], hp: [1, 2], dmg: 5, score: 25, sugar: 4,
+                head: 0.95, abd: 0.8, abdLong: 1.3, color: 0x6fd02a, hueJitter: 0.04, wander: 0.6, webs: true, minWave: 3, weight: 5 },
+  carpenter:  { name: 'Carpenter Ant', intro: 'Big, chunky and tough. Chews right through your ant traps!', scale: [1.25, 1.5], speed: [1.8, 2.4], hp: [26, 32], dmg: 8, score: 45, sugar: 8,
+                head: 1.15, abd: 1.4, color: 0x4a2814, hueJitter: 0.03, minWave: 3, weight: 4, chewer: true, resist: { gatling: 0.5 } },
+  army:       { name: 'Army Ant', intro: 'They attack in SWARMS', scale: [0.65, 0.8], speed: [3.4, 4.2], hp: [1, 1], dmg: 3, score: 12, sugar: 2,
+                head: 1.2, abd: 0.85, color: 0xa8561c, hueJitter: 0.03, swarm: 6, minWave: 4, weight: 2.5 },
+  soldier:    { name: 'Soldier Ant', intro: 'Glows red, then CHARGES! Sidestep it', scale: [1.5, 1.8], speed: [1.3, 1.9], hp: [14, 20], dmg: 12, score: 60, sugar: 11,
+                head: 1.55, abd: 1.0, color: 0xd08a14, hueJitter: 0.05, charger: true, minWave: 4, weight: 3, screenDps: 4 },
+  bullet:     { name: 'Bullet Ant', intro: 'Its sting makes you BLEED. Keep away!', scale: [1.2, 1.4], speed: [2.6, 3.2], hp: [11, 14], dmg: 20, score: 60, sugar: 9,
+                head: 1.1, abd: 1.15, stinger: true, color: 0x5c1212, hueJitter: 0.02, bleeds: true, minWave: 6, weight: 2, screenDps: 5 },
+  ghost:      { name: 'Ghost Ant', intro: 'Nearly invisible. Watch your minimap!', scale: [0.9, 1.1], speed: [2.8, 3.6], hp: [2, 2], dmg: 6, score: 45, sugar: 6,
+                head: 1.0, abd: 1.0, color: 0xdfe8ff, hueJitter: 0.02, opacity: 0.3, wander: 1.0, minWave: 7, weight: 2.5, resist: { blaster: 0.5, gatling: 0.5 } },
+  pharaoh:    { name: 'Pharaoh Ant', intro: 'Tiny amber ant. Kill it and the colony SPLITS into more!', scale: [0.55, 0.65], speed: [3.0, 3.8], hp: [2, 3], dmg: 3, score: 30, sugar: 2,
+                head: 1.05, abd: 1.1, color: 0xd89a3a, abdColor: 0x8a4a1a, hueJitter: 0.02, splits: 2, minWave: 8, weight: 2.5, resist: { spray: 0.5 } },
+  termite:    { name: 'Termite', intro: 'Pale, soft and comes in huge swarms', scale: [0.7, 0.85], speed: [2.6, 3.4], hp: [1, 2], dmg: 3, score: 12, sugar: 1,
+                head: 0.95, abd: 1.0, abdLong: 1.35, color: 0xeadcbc, hueJitter: 0.02, termite: true, swarm: 8, minWave: 9, weight: 2.2, resist: { spray: 2 } },
+  jumper:     { name: 'Jumper Ant', intro: 'Leaps at you from a distance!', scale: [0.9, 1.1], speed: [2.4, 3.0], hp: [2, 3], dmg: 7, score: 55, sugar: 6,
+                head: 1.25, abd: 0.9, color: 0x1f8a8a, hueJitter: 0.03, jumper: true, minWave: 12, weight: 3 },
+  termiteSoldier: { name: 'Termite Soldier', intro: 'Its sticky bite GUMS UP the weapon you are holding', scale: [1.2, 1.4], speed: [1.7, 2.3], hp: [20, 26], dmg: 9, score: 70, sugar: 8,
+                head: 1.6, abd: 1.0, abdLong: 1.3, color: 0xeadcbc, headColor: 0xc8701e, hueJitter: 0.02, termite: true, glue: true, minWave: 13, weight: 2.2,
+                resist: { blast: 0.3 } },
+  titan:      { name: 'Titan Ant', intro: 'A walking tank. Bring explosives!', scale: [2.4, 2.8], speed: [1.0, 1.3], hp: [116, 132], dmg: 25, score: 250, sugar: 30,
+                head: 1.35, abd: 1.3, stinger: true, color: 0x3b0d0d, hueJitter: 0.02, minWave: 15, weight: 0.8, screenDps: 6, resist: { stomp: 0, melee: 0.25, spray: 0.5 } },
+  alate:      { name: 'Flying Termite', intro: 'Flies over your stomps. Shoot it out of the air!', scale: [0.85, 1.0], speed: [3.4, 4.2], hp: [2, 3], dmg: 5, score: 55, sugar: 6,
+                head: 0.95, abd: 1.0, abdLong: 1.3, color: 0x6a4a2a, hueJitter: 0.03, termite: true, flier: true, minWave: 16, weight: 2.4, resist: { stomp: 0, melee: 0.5, trap: 0 } },
+  trapjaw:    { name: 'Trap-Jaw Ant', intro: 'Dodges sideways when you aim at it', scale: [0.95, 1.15], speed: [2.6, 3.2], hp: [2, 3], dmg: 8, score: 60, sugar: 6,
+                head: 1.3, abd: 0.9, color: 0x9a8a3a, hueJitter: 0.03, dodger: true, minWave: 17, weight: 3, resist: { sniper: 0.5 } },
+  acid:       { name: 'Acid Ant', intro: 'Spits acid from far away. Dodge the green blobs!', scale: [1.0, 1.2], speed: [2.0, 2.6], hp: [3, 4], dmg: 14, score: 70, sugar: 7,
+                head: 1.0, abd: 1.25, color: 0x1e2a4a, abdColor: 0x7aff3a, hueJitter: 0.02, ranged: true, minWave: 19, weight: 2.5, resist: { spray: 0 } },
+  rubber:     { name: 'Rubber Ant', intro: 'Grounded! Static Zapper sparks fizzle on it', scale: [1.0, 1.15], speed: [2.3, 2.9], hp: [4, 5], dmg: 7, score: 65, sugar: 7,
+                head: 1.05, abd: 1.1, color: 0x2a2a30, abdColor: 0xffd23a, hueJitter: 0.02, minWave: 20, weight: 2.2, resist: { shock: 0 } },
+  leafcutter: { name: 'Leafcutter Ant', intro: 'Its leaf blocks 99% of blaster and gatling shots from the front', scale: [1.0, 1.2], speed: [2.0, 2.5], hp: [3, 4], dmg: 6, score: 70, sugar: 7,
+                head: 1.2, abd: 0.95, color: 0x8c3b1a, hueJitter: 0.03, shield: true, minWave: 22, weight: 2.5 },
+  nurse:      { name: 'Nurse Ant', intro: 'Heals nearby ants. Kill it first!', scale: [0.85, 1.0], speed: [2.2, 2.8], hp: [3, 3], dmg: 3, score: 80, sugar: 8,
+                head: 1.0, abd: 1.1, color: 0xf07ab0, hueJitter: 0.03, healer: true, minWave: 24, weight: 1.8 },
+  exploder:   { name: 'Exploding Ant', intro: 'Bursts when it dies. Kill it before it reaches you!', scale: [0.9, 1.05], speed: [3.0, 3.6], hp: [1, 2], dmg: 30, score: 60, sugar: 6,
+                head: 1.0, abd: 1.5, color: 0x3a2a1a, abdColor: 0xff7a1a, hueJitter: 0.02, exploder: true, minWave: 26, weight: 2.2 },
+  golden:     { name: 'Golden Ant', intro: 'It runs away! Catch it for a BIG sugar reward', scale: [0.8, 0.9], speed: [5.5, 6.2], hp: [3, 3], dmg: 0, score: 300, sugar: 60,
+                head: 1.0, abd: 1.0, color: 0xffc83a, hueJitter: 0, metal: true, flee: true, minWave: 99, weight: 0 },
+  queen:      { name: 'Queen', scale: [3.8, 4.2], speed: [0.9, 1.2], hp: [170, 195], dmg: 20, score: 1000, sugar: 150,
+                head: 1.2, abd: 1.4, abdLong: 1.2, color: 0x6a2c9a, hueJitter: 0.03, queen: true, minWave: 99, weight: 0, resist: { stomp: 0 } },
+};
+const TANKY = ['carpenter', 'soldier', 'bullet', 'termiteSoldier', 'titan'];
+const TANKY_SNIPER_MULT = 1.6;
+for (const id of TANKY) ANT_TYPES[id].resist = { ...ANT_TYPES[id].resist, sniper: TANKY_SNIPER_MULT };
+for (const T of Object.values(ANT_TYPES)) if (T.termite) T.resist = { ...T.resist, mine: 0 };
+const BLEED_TIME = 10, BLEED_DMG = 2; // bullet ant sting: BLEED_DMG every second for BLEED_TIME seconds
+const CHARGE_WINDUP = 0.7, CHARGE_TIME = 1.0, CHARGE_SPEED = 4.5, CHARGE_KNOCK = 12;
+const MINE_EAT_TIME = 0.8; // seconds a termite needs to chew up a land mine
+const queenBlasterMult = n => n <= 10 ? 1 : n <= 20 ? 0.66 : 0.33;
+// queens heal a % of max health per second; much faster once they have not been hit for a moment
+const QUEEN_REGEN_HURT = 0.001, QUEEN_REGEN_CALM = 0.01, QUEEN_CALM_DELAY = 3.5;
+const goldenSugar = n => 60 + 25 * n;
+const goldenScore = n => 300 + 60 * n;
+
+// ============================================================
+// UPGRADES & WEAPON STATS
+// ============================================================
+const up = {};
+const lv = id => up[id] || 0;
+const geo = (base, g) => l => Math.round(base * Math.pow(g, l) / 5) * 5;
+const fmt = n => n >= 10 ? String(Math.round(n)) : String(Math.round(n * 10) / 10);
+const rps = d => (1 / d).toFixed(1);
+
+const bDmg = (l = lv('bDmg')) => 1.6 + 0.4 * l;
+const bDelay = (l = lv('bRate')) => (1 / 4.6) * Math.pow(0.9559, l);
+const bMag = (l = lv('bMag')) => 24 + 8 * l;
+const bReload = (l = lv('bMag')) => 1.35 * Math.pow(0.92, l);
+const bStreams = (l = lv('bSpread')) => 1 + l;
+const STREAM_DMG = [1, 0.5, 0.25]; // damage share of each extra Split Nozzle stream
+const sDmg = (l = lv('sDmg')) => 23 + 7 * l;
+const sDelay = (l = lv('sRate')) => 0.95 * Math.pow(0.88, l);
+const sMag = (l = lv('sMag')) => 5 + 2 * l;
+const gDmg = (l = lv('gDmg')) => 1 + 0.2 * l;
+const gSpin = (l = lv('gSpin')) => 0.8 * Math.pow(0.78, l);
+const gMag = (l = lv('gMag')) => 150 + 50 * l;
+const sprayDps = (l = lv('spPow')) => 4 + 2 * l;
+const sprayRange = (l = lv('spPow')) => 4.5 + 0.5 * l;
+const sprayDrain = (l = lv('spTank')) => 26 * Math.pow(0.82, l);
+const laserDps = (l = lv('lPow')) => 7 + 3 * l;
+const LASER_TARGETS = 3; // ants the Sun Laser beam can burn through at once
+const laserHeat = (l = lv('lCool')) => 28 * Math.pow(0.82, l);
+// the hotter the lens, the harder it burns: 0.4x when cold, 4x right before overheating
+const laserHeatMult = heat => 0.4 + 3.6 * Math.pow(Math.max(0, heat) / 100, 2);
+const pDmg = (l = lv('pPow')) => 8 + 3 * l;
+const pRadius = (l = lv('pPow')) => 2.2 + 0.25 * l;
+const pMag = (l = lv('pMag')) => 4 + l;
+const zDmg = (l = lv('zPow')) => 3 + 1.4 * l;
+const zChain = (l = lv('zChain')) => 4 + l;
+const zMag = (l = lv('zPow')) => 12 + 2 * l;
+const trapDps = (l = lv('trapPow')) => 3 + 1.5 * l;
+const trapRadius = (l = lv('trapPow')) => 1.8 + 0.2 * l;
+const trapLife = (l = lv('trapLife')) => 40 + 20 * l;
+const MAG = { blaster: bMag, sniper: sMag, gatling: gMag, pinecone: pMag, zapper: zMag };
+const RELOAD = { blaster: bReload, sniper: () => 1.7, gatling: () => 2.6, pinecone: () => 2.2, zapper: () => 1.8 };
+const MINE_FUSE = 4;
+const mineRadius = (l = lv('mineRad')) => 3.5 + 0.6 * l;
+const mineDmg = (l = lv('mineRad')) => 16 + 5 * l;
+const mineCooldown = (l = lv('mineCd')) => 3 * Math.pow(0.85, l);
+const shoeDmg = (l = lv('shoe')) => 3 + 2 * l;
+const shoeRange = (l = lv('shoe')) => 2.6 + 0.25 * l;
+const stompBonus = (l = lv('boots')) => 0.6 * l;
+const STOMP_GRACE = 0.5; // seconds after a stomp landing that ants can't climb on you
+const maxHp = (l = lv('hp')) => 100 + 20 * l;
+const regenRate = (l = lv('regen')) => 0.5 * l;
+const SPRINT_MULT = 1.55;
+const STAMINA_DRAIN = 22, STAMINA_REGEN_DELAY = 0.6, STAMINA_RECOVER = 0.3; // tired until refilled to 30%
+const JUMP_STAMINA = 8;
+const JUMP_CD = 1; // seconds on the ground after landing before you can jump again
+const SPRINT_JUMP_BOOST = 1.3, SPRINT_JUMP_CAP = 1.35; // cap is relative to sprint speed so bunny-hops don't stack forever
+const SHOE_CD = 1.6;
+const maxStamina = (l = lv('stamina')) => 100 + 25 * l;
+const staminaRegen = (l = lv('stamina')) => 16 * (1 + 0.12 * l);
+const moveSpeed = (l = lv('legs')) => 5.1 * (1 + 0.07 * l);
+
+const WEAPONS = [
+  { id: 'blaster',  slot: 1, name: 'Bug Blaster', cross: '' },
+  { id: 'spray',    slot: 2, name: 'Bug Spray', cross: '' },
+  { id: 'sniper',   slot: 3, name: 'Stinger Sniper', cross: 'ring' },
+  { id: 'laser',    slot: 4, name: 'Sun Laser', cross: 'ring' },
+  { id: 'gatling',  slot: 5, name: 'Gumball Gatling', cross: '' },
+  { id: 'pinecone', slot: 6, name: 'Pinecone Launcher', cross: 'ring' },
+  { id: 'zapper',   slot: 7, name: 'Static Zapper', cross: '' },
+];
+// damage kinds, used for resistances
+const KIND_NAMES = {
+  blaster: 'Bug Blaster', gatling: 'Gatling', sniper: 'Sniper', spray: 'Bug Spray', laser: 'Sun Laser',
+  blast: 'explosions', mine: 'land mines', melee: 'the shoe', stomp: 'stomps', shock: 'Static Zapper', trap: 'ant traps',
+};
+function resistLines(T) {
+  if (!T.resist) return [];
+  return Object.entries(T.resist).map(([k, m]) =>
+    m === 0 ? `Immune to ${KIND_NAMES[k]}` : m < 1 ? `${KIND_NAMES[k]} only does ${Math.round(m * 100)}%` : `Weak to ${KIND_NAMES[k]} (x${m})`);
+}
+const owned = id => id === 'blaster' || lv(id) > 0;
+
+const UPGRADES = [
+  { id: 'bDmg', tab: 'Weapons', group: 'Bug Blaster', name: 'Hollow Points', max: 10, cost: geo(20, 1.3), desc: l => `Damage ${fmt(bDmg(l))} → ${fmt(bDmg(l + 1))}` },
+  { id: 'bRate', name: 'Rapid Pump', max: 8, cost: geo(25, 1.33), desc: l => `Fire rate ${rps(bDelay(l))} → ${rps(bDelay(l + 1))} shots/sec` },
+  { id: 'bMag', name: 'Extended Tank', max: 6, cost: geo(20, 1.35), desc: l => `Ammo ${bMag(l)} → ${bMag(l + 1)}, faster reload` },
+  { id: 'bSpread', name: 'Split Nozzle', max: 2, cost: l => [160, 320][l], waveReq: [1, 8],
+    desc: l => `Bullet streams ${bStreams(l)} → ${bStreams(l + 1)} (new stream does ${STREAM_DMG[l + 1] * 100}% damage)` },
+  { id: 'bPierce', name: 'Piercing Rounds', max: 3, cost: geo(60, 1.5), desc: l => `Shots go through ${l} → ${l + 1} extra ants` },
+  { id: 'spray', group: 'Bug Spray', name: 'Unlock Bug Spray', max: 1, unlock: true, cost: () => 80, desc: () => 'Slot 2. A poison cloud that melts every ant in front of you.' },
+  { id: 'spPow', req: 'spray', name: 'Extra-Strength Formula', max: 8, cost: geo(35, 1.3), desc: l => `Damage ${fmt(sprayDps(l))} → ${fmt(sprayDps(l + 1))}/sec, range ${fmt(sprayRange(l))} → ${fmt(sprayRange(l + 1))}m` },
+  { id: 'spTank', req: 'spray', name: 'Bigger Can', max: 5, cost: geo(30, 1.4), desc: l => `Fuel use ${Math.round(sprayDrain(l))} → ${Math.round(sprayDrain(l + 1))}/sec` },
+  { id: 'sniper', group: 'Stinger Sniper', name: 'Unlock Stinger Sniper', max: 1, unlock: true, cost: () => 150, desc: () => 'Slot 3. Massive damage, pierces a line of ants, ignores leaf shields.' },
+  { id: 'sDmg', req: 'sniper', name: 'Sharper Stinger', max: 8, cost: geo(45, 1.3), desc: l => `Damage ${fmt(sDmg(l))} → ${fmt(sDmg(l + 1))}` },
+  { id: 'sRate', req: 'sniper', name: 'Quick Bolt', max: 5, cost: geo(40, 1.38), desc: l => `Fire delay ${sDelay(l).toFixed(2)}s → ${sDelay(l + 1).toFixed(2)}s` },
+  { id: 'sMag', req: 'sniper', name: 'Long Clip', max: 4, cost: geo(40, 1.45), desc: l => `Rounds ${sMag(l)} → ${sMag(l + 1)}, pierces ${3 + l} → ${4 + l} ants` },
+  { id: 'laser', group: 'Sun Laser', name: 'Unlock Sun Laser', max: 1, unlock: true, cost: () => 200, desc: () => 'Slot 4. A magnifying-glass beam. The hotter it gets, the harder it burns (up to 4x), but it overheats. The beam burns through up to 3 ants in a line.' },
+  { id: 'lPow', req: 'laser', name: 'Bigger Lens', max: 8, cost: geo(50, 1.3), desc: l => `Base burn ${laserDps(l)} → ${laserDps(l + 1)}/sec (up to ${laserDps(l + 1) * 4}/sec when hot)` },
+  { id: 'lCool', req: 'laser', name: 'Cool Shades', max: 5, cost: geo(45, 1.38), desc: l => `Heat build-up ${Math.round(laserHeat(l))} → ${Math.round(laserHeat(l + 1))}/sec` },
+  { id: 'gatling', group: 'Gumball Gatling', name: 'Unlock Gumball Gatling', max: 1, unlock: true, cost: () => 250, desc: () => 'Slot 5. Spins up, then fires a storm of gumballs.' },
+  { id: 'gDmg', req: 'gatling', name: 'Jawbreakers', max: 8, cost: geo(50, 1.3), desc: l => `Damage ${fmt(gDmg(l))} → ${fmt(gDmg(l + 1))} per gumball` },
+  { id: 'gSpin', req: 'gatling', name: 'Greased Gears', max: 4, cost: geo(40, 1.4), desc: l => `Spin-up ${gSpin(l).toFixed(2)}s → ${gSpin(l + 1).toFixed(2)}s` },
+  { id: 'gMag', req: 'gatling', name: 'Gumball Hopper', max: 4, cost: geo(45, 1.4), desc: l => `Ammo ${gMag(l)} → ${gMag(l + 1)}` },
+  { id: 'pinecone', group: 'Pinecone Launcher', name: 'Unlock Pinecone Launcher', max: 1, unlock: true, cost: () => 300, desc: () => 'Slot 6. Lobs exploding pinecones that blow up swarms.' },
+  { id: 'pPow', req: 'pinecone', name: 'Spiky Cones', max: 6, cost: geo(55, 1.35), desc: l => `Blast ${pDmg(l)} → ${pDmg(l + 1)} damage, radius ${fmt(pRadius(l))} → ${fmt(pRadius(l + 1))}m` },
+  { id: 'pMag', req: 'pinecone', name: 'Cone Bandolier', max: 4, cost: geo(50, 1.4), desc: l => `Pinecones ${pMag(l)} → ${pMag(l + 1)}` },
+  { id: 'zapper', group: 'Static Zapper', name: 'Unlock Static Zapper', max: 1, unlock: true, cost: () => 350, desc: () => 'Slot 7. Lightning that chains from ant to ant.' },
+  { id: 'zPow', req: 'zapper', name: 'More Volts', max: 6, cost: geo(55, 1.35), desc: l => `Damage ${fmt(zDmg(l))} → ${fmt(zDmg(l + 1))} per ant, more charges` },
+  { id: 'zChain', req: 'zapper', name: 'Forked Lightning', max: 4, cost: geo(70, 1.45), desc: l => `Chains to ${zChain(l)} → ${zChain(l + 1)} ants` },
+
+  { id: 'mine', tab: 'Gadgets', group: 'Land Mines', name: 'Unlock Land Mines', max: 1, cost: () => 60, desc: () => `Press G to plant a mine anywhere. It blows up after ${MINE_FUSE} seconds. Comes with 3.` },
+  { id: 'minePack', req: 'mine', name: 'Mine Pack', max: Infinity, cost: () => 90, desc: () => `+3 mines (you have ${player.mines})` },
+  { id: 'mineRad', req: 'mine', name: 'Bigger Boom', max: 5, cost: geo(40, 1.4), desc: l => `Radius ${fmt(mineRadius(l))} → ${fmt(mineRadius(l + 1))}m, damage ${mineDmg(l)} → ${mineDmg(l + 1)}` },
+  { id: 'mineCd', req: 'mine', name: 'Quick Hands', max: 4, cost: geo(50, 1.45), desc: l => `Cooldown ${mineCooldown(l).toFixed(1)}s → ${mineCooldown(l + 1).toFixed(1)}s` },
+  { id: 'trap', group: 'Sticky Ant Traps', name: 'Unlock Ant Traps', max: 1, cost: () => 120, desc: () => 'Press T near a nest to set a sticky trap that slows and hurts ants coming out. Comes with 2.' },
+  { id: 'trapPack', req: 'trap', name: 'Trap Pack', max: Infinity, cost: () => 80, desc: () => `+2 traps (you have ${player.traps})` },
+  { id: 'trapPow', req: 'trap', name: 'Extra Sticky', max: 5, cost: geo(45, 1.4), desc: l => `Trap damage ${fmt(trapDps(l))} → ${fmt(trapDps(l + 1))}/sec, radius ${fmt(trapRadius(l))} → ${fmt(trapRadius(l + 1))}m` },
+  { id: 'trapLife', req: 'trap', name: 'Long-Lasting Glue', max: 4, cost: geo(40, 1.4), desc: l => `Traps last ${trapLife(l)}s → ${trapLife(l + 1)}s` },
+
+  { id: 'shoe', tab: 'Gear', group: 'Shoe & Boots', name: 'Steel-Toe Shoe', max: 8, cost: geo(25, 1.3), desc: l => `Shoe damage ${shoeDmg(l)} → ${shoeDmg(l + 1)}, longer reach` },
+  { id: 'legs', name: 'Running Shoes', max: 5, cost: geo(35, 1.4), desc: l => `Move speed ${fmt(moveSpeed(l))} → ${fmt(moveSpeed(l + 1))} (sprint ${fmt(moveSpeed(l) * SPRINT_MULT)} → ${fmt(moveSpeed(l + 1) * SPRINT_MULT)})` },
+  { id: 'stamina', name: 'Big Lungs', max: 5, cost: geo(35, 1.4), desc: l => `Stamina ${maxStamina(l)} → ${maxStamina(l + 1)}, recovers ${fmt(staminaRegen(l))} → ${fmt(staminaRegen(l + 1))}/sec` },
+  { id: 'boots', name: 'Stomp Boots', max: 5, cost: geo(30, 1.4), desc: l => `Jump higher, stomp radius +${fmt(stompBonus(l))} → +${fmt(stompBonus(l + 1))}m` },
+  { id: 'hp', group: 'Body', name: 'Thick Skin', max: 10, cost: geo(30, 1.25), desc: l => `Max health ${maxHp(l)} → ${maxHp(l + 1)}` },
+  { id: 'regen', name: 'Band-Aids', max: 5, cost: geo(60, 1.45), desc: l => `Heal ${fmt(regenRate(l))} → ${fmt(regenRate(l + 1))} health/sec` },
+  { id: 'heal', name: 'Snack Break', max: Infinity, cost: () => 25, desc: () => 'Restore your health to full' },
+];
+{
+  let tab, group;
+  for (const u of UPGRADES) { tab = u.tab || tab; group = u.group || group; u.tab = tab; u.group = group; }
+}
+const TABS = ['Weapons', 'Gadgets', 'Gear'];
+
+// ============================================================
+// RENDERER / SCENE
+// ============================================================
+const glCanvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const HORIZON = new THREE.Color(0xcfe3ee);
+const scene = new THREE.Scene();
+scene.background = HORIZON.clone();
+scene.fog = new THREE.Fog(HORIZON, 40, 120);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.03, 400);
+camera.rotation.order = 'YXZ';
+scene.add(camera);
+
+const SUN_DIR = new THREE.Vector3(18, 32, 12).normalize();
+scene.add(new THREE.HemisphereLight(0xd8ecff, 0x55703a, 1.0));
+const sun = new THREE.DirectionalLight(0xfff0d6, 2.4);
+sun.position.copy(SUN_DIR).multiplyScalar(45);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 110 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.02;
+sun.shadow.radius = 3;
+scene.add(sun);
+const rimLight = new THREE.DirectionalLight(0xffc89a, 0.5);
+rimLight.position.set(-20, 10, -25);
+scene.add(rimLight);
+
+// sky dome: vertical gradient plus a soft sun glow
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(300, 32, 16),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { top: { value: new THREE.Color(0x3d7fd0) }, horizon: { value: HORIZON }, sunDir: { value: SUN_DIR } },
+    vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;
+      void main() {
+        float h = clamp(vDir.y, 0.0, 1.0);
+        vec3 col = mix(horizon, top, pow(h, 0.55));
+        float s = max(dot(normalize(vDir), sunDir), 0.0);
+        col += vec3(1.0, 0.92, 0.75) * (pow(s, 600.0) * 4.0 + pow(s, 12.0) * 0.25);
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  })
+);
+sky.renderOrder = -1;
+scene.add(sky);
+
+// post-processing: gentle bloom so glowing things (laser, acid, sparks) shine
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.45, 0.5, 0.92);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ============================================================
+// TEXTURES
+// ============================================================
+function canvasTex(size, draw, repeat = 1) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat, repeat);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+
+const grassTex = canvasTex(512, (g, s) => {
+  g.fillStyle = '#4f7f2e'; g.fillRect(0, 0, s, s);
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random() * s, y = Math.random() * s, r = 30 + Math.random() * 90;
+    const grd = g.createRadialGradient(x, y, 0, x, y, r);
+    const c = Math.random() < 0.5 ? 'rgba(30,60,15,0.35)' : 'rgba(140,170,60,0.25)';
+    grd.addColorStop(0, c); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    for (const ox of [-s, 0, s]) for (const oy of [-s, 0, s]) { g.save(); g.translate(ox, oy); g.fillRect(x - r, y - r, r * 2, r * 2); g.restore(); }
+  }
+  for (let i = 0; i < 16000; i++) {
+    g.fillStyle = `hsl(${78 + Math.random() * 38},${36 + Math.random() * 28}%,${18 + Math.random() * 26}%)`;
+    g.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 1.5, 2 + Math.random() * 5);
+  }
+}, 30);
+
+const blanketTex = canvasTex(256, (g, s) => {
+  const n = 8, c = s / n;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    g.fillStyle = (x + y) % 2 ? '#f4efe6' : '#c8262b';
+    g.fillRect(x * c, y * c, c, c);
+  }
+  g.globalAlpha = 0.12;
+  for (let i = 0; i < s; i += 3) { g.fillStyle = '#000'; g.fillRect(i, 0, 1, s); g.fillRect(0, i, s, 1); }
+});
+
+const dirtTex = canvasTex(128, (g, s) => {
+  g.fillStyle = '#7a5532'; g.fillRect(0, 0, s, s);
+  for (let i = 0; i < 1500; i++) {
+    g.fillStyle = `hsl(28,${30 + Math.random() * 30}%,${18 + Math.random() * 25}%)`;
+    g.fillRect(Math.random() * s, Math.random() * s, 2, 2);
+  }
+}, 2);
+
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.3, 'rgba(255,240,180,0.8)'); grd.addColorStop(1, 'rgba(255,200,80,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+
+// ============================================================
+// WORLD
+// ============================================================
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const blanket = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), new THREE.MeshStandardMaterial({ map: blanketTex, roughness: 0.95 }));
+blanket.rotation.x = -Math.PI / 2;
+blanket.position.y = 0.005;
+blanket.receiveShadow = true;
+scene.add(blanket);
+
+// picnic food (decoration only)
+const foodGroup = new THREE.Group();
+scene.add(foodGroup);
+{
+  const wicker = new THREE.MeshStandardMaterial({ color: 0xb0823f, roughness: 0.9 });
+  const basket = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.6), wicker);
+  basket.position.set(0.55, 0.25, -0.4); basket.castShadow = basket.receiveShadow = true;
+  foodGroup.add(basket);
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.03, 8, 24, Math.PI), wicker);
+  handle.position.set(0.55, 0.5, -0.4); foodGroup.add(handle);
+  const melon = new THREE.Mesh(new THREE.SphereGeometry(0.45, 20, 12, 0, Math.PI), new THREE.MeshStandardMaterial({ color: 0xe8384a }));
+  melon.rotation.x = -Math.PI / 2; melon.position.set(-0.6, 0.0, 0.3); melon.castShadow = true;
+  foodGroup.add(melon);
+  const rind = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.05, 8, 24, Math.PI), new THREE.MeshStandardMaterial({ color: 0x2f7a2a }));
+  rind.position.set(-0.6, 0.0, 0.3); rind.rotation.x = -Math.PI / 2; foodGroup.add(rind);
+  const sponge = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.22, 24), new THREE.MeshStandardMaterial({ color: 0xf3d9a4 }));
+  sponge.position.set(0.35, 0.11, 0.5); sponge.castShadow = true; foodGroup.add(sponge);
+  const frosting = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.06, 24), new THREE.MeshStandardMaterial({ color: 0xff9ac8 }));
+  frosting.position.set(0.35, 0.24, 0.5); foodGroup.add(frosting);
+  const cherry = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd0101a, roughness: 0.2 }));
+  cherry.position.set(0.35, 0.31, 0.5); foodGroup.add(cherry);
+  const bread = new THREE.MeshStandardMaterial({ color: 0xe8c58a });
+  for (const y of [0.03, 0.11]) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.34), bread);
+    b.position.set(-0.5, y, -0.5); b.castShadow = true; foodGroup.add(b);
+  }
+  const lettuce = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.03, 0.38), new THREE.MeshStandardMaterial({ color: 0x5fbf3a }));
+  lettuce.position.set(-0.5, 0.07, -0.5); foodGroup.add(lettuce);
+}
+
+{
+  const wood = new THREE.MeshStandardMaterial({ color: 0xc9a273, roughness: 0.85 });
+  const postGeo = new THREE.BoxGeometry(0.25, 1.4, 0.25);
+  const posts = [];
+  for (let i = -ARENA; i <= ARENA; i += 2.8) {
+    posts.push([i, -ARENA - 0.3], [i, ARENA + 0.3], [-ARENA - 0.3, i], [ARENA + 0.3, i]);
+  }
+  const inst = new THREE.InstancedMesh(postGeo, wood, posts.length);
+  const m = new THREE.Matrix4();
+  posts.forEach(([x, z], i) => { m.makeTranslation(x, 0.7, z); inst.setMatrixAt(i, m); });
+  inst.castShadow = true;
+  scene.add(inst);
+  const L = ARENA * 2 + 0.6;
+  for (const h of [0.45, 1.05]) {
+    for (const [x, z, rx] of [[0, -ARENA - 0.3, 0], [0, ARENA + 0.3, 0], [-ARENA - 0.3, 0, 1], [ARENA + 0.3, 0, 1]]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(rx ? 0.1 : L, 0.14, rx ? L : 0.1), wood);
+      rail.position.set(x, h, z); rail.castShadow = true;
+      scene.add(rail);
+    }
+  }
+}
+
+// [x, z, radius] of tree trunks inside the arena, used for collision
+const TREES = [];
+{
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b3b22, roughness: 0.95 });
+  const leafMats = [0x2f6b2a, 0x3d7d2c, 0x285a25, 0x4a8a32].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, flatShading: true }));
+  const pineMat = new THREE.MeshStandardMaterial({ color: 0x1f4a26, roughness: 0.9, flatShading: true });
+  for (let i = 0; i < 46; i++) {
+    const a = (i / 46) * Math.PI * 2 + Math.random() * 0.12;
+    const r = 36 + Math.random() * 26;
+    const tree = new THREE.Group();
+    const h = 3 + Math.random() * 2.5;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.45, h, 8), trunkMat);
+    trunk.position.y = h / 2; trunk.castShadow = true; tree.add(trunk);
+    if (Math.random() < 0.3) {
+      for (let k = 0; k < 3; k++) {
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(2.2 - k * 0.55, 2.6, 8), pineMat);
+        cone.position.y = h + k * 1.4; cone.castShadow = true; tree.add(cone);
+      }
+    } else {
+      const lm = leafMats[(Math.random() * leafMats.length) | 0];
+      for (let k = 0; k < 4; k++) {
+        const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(1.4 + Math.random() * 1.1, 1), lm);
+        leaf.position.set((Math.random() - 0.5) * 1.8, h + 0.4 + k * 0.7, (Math.random() - 0.5) * 1.8);
+        leaf.castShadow = true; tree.add(leaf);
+      }
+    }
+    tree.rotation.y = Math.random() * Math.PI * 2;
+    const tx = Math.cos(a) * r, tz = Math.sin(a) * r;
+    tree.position.set(tx, 0, tz);
+    if (Math.abs(tx) < ARENA + 1 && Math.abs(tz) < ARENA + 1) TREES.push([tx, tz, 0.5]);
+    scene.add(tree);
+  }
+  // rolling hills on the horizon
+  const hillMat = new THREE.MeshStandardMaterial({ color: 0x5f8f3e, roughness: 1, flatShading: true });
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + Math.random() * 0.2;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), hillMat);
+    m.scale.set(40 + Math.random() * 30, 8 + Math.random() * 10, 30 + Math.random() * 20);
+    m.position.set(Math.cos(a) * 150, -1, Math.sin(a) * 150);
+    m.rotation.y = -a;
+    scene.add(m);
+  }
+}
+
+// grass blades: one instanced mesh, swaying in the wind in the vertex shader
+const windUniform = { value: 0 };
+{
+  const blade = new THREE.BufferGeometry();
+  blade.setAttribute('position', new THREE.Float32BufferAttribute([-0.03, 0, 0, 0.03, 0, 0, -0.018, 0.18, 0, 0.018, 0.18, 0, 0, 0.34, 0], 3));
+  blade.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+  blade.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4]);
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, side: THREE.DoubleSide });
+  mat.onBeforeCompile = shader => {
+    shader.uniforms.uWind = windUniform;
+    shader.vertexShader = 'uniform float uWind;\n' + shader.vertexShader.replace('#include <begin_vertex>',
+      `#include <begin_vertex>
+       float sway = sin(uWind * 1.7 + instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.22) * 0.5 + sin(uWind * 3.1 + instanceMatrix[3].x) * 0.2;
+       transformed.x += sway * position.y * 0.35;`);
+  };
+  const N = 14000;
+  const inst = new THREE.InstancedMesh(blade, mat, N);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler(), col = new THREE.Color();
+  let n = 0;
+  while (n < N) {
+    const x = (Math.random() - 0.5) * 70, z = (Math.random() - 0.5) * 70;
+    if (Math.abs(x) < 3.7 && Math.abs(z) < 3.7) continue;
+    if (HILLS.some(([hx, hz]) => Math.hypot(x - hx, z - hz) < 2.1)) continue;
+    e.set((Math.random() - 0.5) * 0.4, Math.random() * Math.PI, (Math.random() - 0.5) * 0.4);
+    q.setFromEuler(e);
+    const sc = 0.6 + Math.random() * 0.9;
+    s.set(sc, sc * (0.7 + Math.random() * 0.8), sc);
+    p.set(x, 0, z);
+    m.compose(p, q, s);
+    inst.setMatrixAt(n, m);
+    col.setHSL(0.22 + Math.random() * 0.08, 0.45 + Math.random() * 0.25, 0.22 + Math.random() * 0.18);
+    inst.setColorAt(n, col);
+    n++;
+  }
+  inst.receiveShadow = true;
+  scene.add(inst);
+}
+
+// [x, z, radius] of rocks inside the arena, used for collision
+const ROCKS = [];
+
+// wildflowers and pebbles
+{
+  const petal = new THREE.SphereGeometry(0.045, 6, 4);
+  const cols = [0xffffff, 0xfff27a, 0xff8ac8, 0xb08aff, 0xff6a4a];
+  for (const c of cols) {
+    const inst = new THREE.InstancedMesh(petal, new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 }), 90);
+    const m = new THREE.Matrix4();
+    let n = 0;
+    while (n < 90) {
+      const x = (Math.random() - 0.5) * 66, z = (Math.random() - 0.5) * 66;
+      if (Math.abs(x) < 4 && Math.abs(z) < 4) continue;
+      if (HILLS.some(([hx, hz]) => Math.hypot(x - hx, z - hz) < 2.4)) continue;
+      m.makeTranslation(x, 0.16 + Math.random() * 0.12, z);
+      inst.setMatrixAt(n++, m);
+    }
+    scene.add(inst);
+  }
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x8a8a84, roughness: 0.95, flatShading: true });
+  for (let i = 0; i < 26; i++) {
+    const a = Math.random() * Math.PI * 2, r = 29.5 + Math.random() * 6;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const size = 0.3 + Math.random() * 0.7;
+    if (HILLS.some(([hx, hz]) => Math.hypot(x - hx, z - hz) < 2.6 + size)) { i--; continue; }
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), rockMat);
+    rock.position.set(x, 0.1, z);
+    if (Math.abs(x) < ARENA + size && Math.abs(z) < ARENA + size) ROCKS.push([x, z, size * 0.9]);
+    rock.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    rock.scale.y = 0.6;
+    rock.castShadow = rock.receiveShadow = true;
+    scene.add(rock);
+  }
+}
+
+// drifting clouds
+const clouds = [];
+{
+  const cloudTex = (() => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+    const g = c.getContext('2d');
+    for (let i = 0; i < 14; i++) {
+      const x = 40 + Math.random() * 176, y = 50 + Math.random() * 40, r = 22 + Math.random() * 30;
+      const grd = g.createRadialGradient(x, y, 0, x, y, r);
+      grd.addColorStop(0, 'rgba(255,255,255,0.9)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd; g.fillRect(0, 0, 256, 128);
+    }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  for (let i = 0; i < 12; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, depthWrite: false, fog: false, opacity: 0.85 }));
+    const a = Math.random() * Math.PI * 2, r = 120 + Math.random() * 100;
+    sp.position.set(Math.cos(a) * r, 55 + Math.random() * 35, Math.sin(a) * r);
+    sp.scale.set(70 + Math.random() * 50, 30 + Math.random() * 15, 1);
+    scene.add(sp);
+    clouds.push({ sp, a, r, speed: 0.004 + Math.random() * 0.004 });
+  }
+}
+
+{
+  const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 1 });
+  const holeMat = new THREE.MeshBasicMaterial({ color: 0x120a04 });
+  for (const [x, z] of HILLS) {
+    const hill = new THREE.Mesh(new THREE.ConeGeometry(2.0, 1.0, 18, 1, true), dirtMat);
+    hill.position.set(x, 0.45, z); hill.castShadow = hill.receiveShadow = true;
+    scene.add(hill);
+    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.35, 14), holeMat);
+    hole.rotation.x = -Math.PI / 2; hole.position.set(x, 0.62, z);
+    scene.add(hole);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.6, 0.18, 14), dirtMat);
+    cap.position.set(x, 0.55, z); scene.add(cap);
+  }
+}
+
+// ============================================================
+// SOLID OBSTACLES (nests, picnic blanket, food)
+// ============================================================
+const HILL_R = 2.0;
+const SOLIDS = [...ROCKS, ...TREES];
+const BLANKET_HALF = 3.5;
+const FOOD_R = 1.2;
+
+function pushOutCircle(p, cx, cz, r) {
+  const ox = p.x - cx, oz = p.z - cz, d = Math.hypot(ox, oz);
+  if (d >= r) return;
+  if (d < 1e-4) { p.x = cx + r; return; }
+  p.x = cx + ox / d * r; p.z = cz + oz / d * r;
+}
+
+function pushOutBox(p, h) {
+  if (Math.abs(p.x) >= h || Math.abs(p.z) >= h) return;
+  if (h - Math.abs(p.x) < h - Math.abs(p.z)) p.x = Math.sign(p.x || 1) * h;
+  else p.z = Math.sign(p.z || 1) * h;
+}
+
+const onBlanket = (p, margin = 0) => Math.abs(p.x) < BLANKET_HALF + margin && Math.abs(p.z) < BLANKET_HALF + margin;
+
+// Returns a heading that skirts the closest circle blocking the straight path, or null if the path is clear.
+function avoidHeading(p, ang, distToGoal, circles) {
+  const dx = Math.sin(ang), dz = Math.cos(ang);
+  let best = null, bestGap = Infinity;
+  for (const [cx, cz, R] of circles) {
+    const ox = cx - p.x, oz = cz - p.z, d = Math.hypot(ox, oz);
+    const gap = d - R;
+    if (gap > 4 || d < 1e-4) continue;
+    const proj = ox * dx + oz * dz;
+    if (proj <= 0 || proj - R > distToGoal) continue;
+    const perp = ox * dz - oz * dx;
+    if (Math.abs(perp) >= R) continue;
+    if (gap < bestGap) {
+      bestGap = gap;
+      const off = Math.asin(Math.min(1, R / d));
+      best = Math.atan2(ox, oz) + (perp > 0 ? -off : off);
+    }
+  }
+  return best;
+}
+
+function antCircles(a, blanketFree) {
+  const rA = 0.3 * a.scale + 0.25;
+  const list = [];
+  for (const h of HILLS) if (h !== a.home) list.push([h[0], h[1], HILL_R + rA]);
+  for (const [x, z, R] of SOLIDS) list.push([x, z, R + rA]);
+  if (blanketFree) list.push([0, 0, FOOD_R + rA]);
+  else list.push([0, 0, BLANKET_HALF * 1.15 + rA]);
+  return list;
+}
+
+// ants already on the blanket when it closes are allowed to walk off instead of being shoved to the edge
+function blanketFreeFor(a, blanketOpen) {
+  const inside = onBlanket(a.root.position, 0.3 * a.scale);
+  a.onCloth = inside && (blanketOpen || a.onCloth);
+  return blanketOpen || a.onCloth;
+}
+
+function collideAnt(a, blanketFree) {
+  const p = a.root.position;
+  const rA = 0.3 * a.scale;
+  if (a.home && Math.hypot(p.x - a.home[0], p.z - a.home[1]) > HILL_R + rA + 0.1) a.home = null;
+  for (const h of HILLS) if (h !== a.home) pushOutCircle(p, h[0], h[1], HILL_R + rA);
+  if (!a.T.flier) for (const [x, z, R] of SOLIDS) pushOutCircle(p, x, z, R + rA);
+  if (blanketFree) pushOutCircle(p, 0, 0, FOOD_R + rA);
+  else pushOutBox(p, BLANKET_HALF + rA);
+}
+
+function collidePlayer() {
+  const p = player.pos;
+  for (const [x, z] of HILLS) pushOutCircle(p, x, z, HILL_R + 0.35);
+  for (const [x, z, R] of SOLIDS) pushOutCircle(p, x, z, R + 0.35);
+  pushOutCircle(p, 0, 0, FOOD_R + 0.35);
+}
+
+// ============================================================
+// AUDIO (synthesised, no files)
+// ============================================================
+let actx = null, master = null, noiseBuf = null;
+function initAudio() {
+  if (actx) { actx.resume(); return; }
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  master = actx.createGain(); master.gain.value = 0.35; master.connect(actx.destination);
+  noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function playNoise({ dur = 0.1, freq = 1000, freqEnd = null, type = 'lowpass', q = 1, vol = 0.5, delay = 0 }) {
+  if (!actx) return;
+  const t = actx.currentTime + delay;
+  const src = actx.createBufferSource(); src.buffer = noiseBuf;
+  const f = actx.createBiquadFilter(); f.type = type; f.Q.value = q;
+  f.frequency.setValueAtTime(freq, t);
+  if (freqEnd) f.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+  const g = actx.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(f).connect(g).connect(master);
+  src.start(t); src.stop(t + dur + 0.05);
+}
+function playTone({ freq = 440, freqEnd = null, dur = 0.1, type = 'sine', vol = 0.3, delay = 0 }) {
+  if (!actx) return;
+  const t = actx.currentTime + delay;
+  const o = actx.createOscillator(); o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (freqEnd) o.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+  const g = actx.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+const sfx = {
+  shoot()  { playNoise({ dur: 0.07, freq: 2500, type: 'highpass', vol: 0.22 }); playTone({ freq: 900, freqEnd: 180, dur: 0.08, type: 'square', vol: 0.07 }); },
+  snipe()  { playNoise({ dur: 0.25, freq: 3500, freqEnd: 300, vol: 0.5 }); playTone({ freq: 160, freqEnd: 50, dur: 0.25, vol: 0.4 }); },
+  gat()    { playNoise({ dur: 0.04, freq: 1800, type: 'bandpass', q: 2, vol: 0.18 }); },
+  squish() { playNoise({ dur: 0.2, freq: 2000, freqEnd: 150, q: 7, vol: 0.55 }); playTone({ freq: 200, freqEnd: 55, dur: 0.16, vol: 0.28 }); },
+  hit()    { playTone({ freq: 650, freqEnd: 320, dur: 0.05, type: 'triangle', vol: 0.12 }); },
+  block()  { playTone({ freq: 1500, freqEnd: 900, dur: 0.06, type: 'square', vol: 0.06 }); },
+  bite()   { playTone({ freq: 240, freqEnd: 100, dur: 0.16, type: 'sawtooth', vol: 0.18 }); playNoise({ dur: 0.1, freq: 900, vol: 0.2 }); },
+  stomp()  { playTone({ freq: 130, freqEnd: 40, dur: 0.28, vol: 0.55 }); playNoise({ dur: 0.22, freq: 500, freqEnd: 80, vol: 0.45 }); },
+  swing()  { playNoise({ dur: 0.16, freq: 500, freqEnd: 2600, type: 'bandpass', q: 2, vol: 0.3 }); },
+  smack()  { playNoise({ dur: 0.1, freq: 1400, type: 'bandpass', q: 1, vol: 0.6 }); playTone({ freq: 160, freqEnd: 60, dur: 0.12, vol: 0.3 }); },
+  slap()   { playNoise({ dur: 0.12, freq: 2800, type: 'bandpass', q: 0.8, vol: 0.8 }); },
+  reload() { playTone({ freq: 320, dur: 0.05, type: 'square', vol: 0.1 }); playTone({ freq: 520, dur: 0.06, type: 'square', vol: 0.1, delay: 0.6 }); },
+  empty()  { playTone({ freq: 1300, dur: 0.03, type: 'square', vol: 0.06 }); },
+  spray()  { playNoise({ dur: 0.12, freq: 5000, type: 'highpass', vol: 0.12 }); },
+  beam()   { playTone({ freq: 220 + Math.random() * 20, dur: 0.12, type: 'sawtooth', vol: 0.05 }); playNoise({ dur: 0.1, freq: 3000, type: 'bandpass', q: 3, vol: 0.05 }); },
+  boom()   { playTone({ freq: 90, freqEnd: 28, dur: 0.7, vol: 0.7 }); playNoise({ dur: 1.0, freq: 1500, freqEnd: 90, vol: 0.85 }); },
+  spit()   { playNoise({ dur: 0.15, freq: 900, freqEnd: 300, q: 4, vol: 0.25 }); },
+  zap()    { playTone({ freq: 1800, freqEnd: 300, dur: 0.14, type: 'square', vol: 0.09 }); playNoise({ dur: 0.12, freq: 4000, type: 'highpass', vol: 0.25 }); },
+  thunk()  { playTone({ freq: 180, freqEnd: 90, dur: 0.12, type: 'triangle', vol: 0.3 }); playNoise({ dur: 0.08, freq: 600, vol: 0.3 }); },
+  trap()   { playNoise({ dur: 0.25, freq: 400, freqEnd: 120, q: 2, vol: 0.35 }); playTone({ freq: 300, freqEnd: 500, dur: 0.15, type: 'triangle', vol: 0.12 }); },
+  beep()   { playTone({ freq: 1500, dur: 0.05, type: 'square', vol: 0.05 }); },
+  glue()   { playNoise({ dur: 0.3, freq: 300, freqEnd: 900, q: 6, vol: 0.4 }); },
+  rage()   { playTone({ freq: 70, freqEnd: 140, dur: 1.4, type: 'sawtooth', vol: 0.25 }); playNoise({ dur: 1.2, freq: 200, freqEnd: 900, vol: 0.3 }); },
+  heal()   { playTone({ freq: 880, freqEnd: 1320, dur: 0.2, type: 'sine', vol: 0.06 }); },
+  buy()    { playTone({ freq: 660, dur: 0.08, type: 'triangle', vol: 0.18 }); playTone({ freq: 990, dur: 0.12, type: 'triangle', vol: 0.18, delay: 0.07 }); },
+  swap()   { playTone({ freq: 420, freqEnd: 620, dur: 0.06, type: 'square', vol: 0.07 }); },
+  gold()   { [880, 1108, 1318, 1760].forEach((f, i) => playTone({ freq: f, dur: 0.12, type: 'triangle', vol: 0.15, delay: i * 0.06 })); },
+  wave()   { [440, 554, 659, 880].forEach((f, i) => playTone({ freq: f, dur: 0.18, type: 'triangle', vol: 0.15, delay: i * 0.1 })); },
+  queen()  { playTone({ freq: 90, freqEnd: 60, dur: 1.2, type: 'sawtooth', vol: 0.2 }); playTone({ freq: 95, freqEnd: 58, dur: 1.2, type: 'sawtooth', vol: 0.2 }); },
+  lose()   { [440, 370, 311, 220].forEach((f, i) => playTone({ freq: f, dur: 0.3, type: 'triangle', vol: 0.18, delay: i * 0.22 })); },
+};
+
+// ============================================================
+// ANTS (3D)
+// ============================================================
+const GEO = {
+  sphere: new THREE.SphereGeometry(1, 14, 10),
+  femur: (() => { const g = new THREE.CylinderGeometry(0.016, 0.013, 0.2, 5); g.rotateZ(Math.PI / 2); g.translate(0.1, 0, 0); return g; })(),
+  tibia: (() => { const g = new THREE.CylinderGeometry(0.012, 0.007, 0.3, 5); g.rotateZ(Math.PI / 2); g.translate(0.15, 0, 0); return g; })(),
+  antenna: (() => { const g = new THREE.CylinderGeometry(0.008, 0.005, 0.24, 4); g.rotateX(Math.PI / 2); g.translate(0, 0, 0.12); return g; })(),
+  wing: new THREE.PlaneGeometry(0.25, 0.6),
+  stinger: (() => { const g = new THREE.ConeGeometry(0.035, 0.14, 6); g.rotateX(-Math.PI / 2); return g; })(),
+};
+const antMats = {};
+for (const [k, T] of Object.entries(ANT_TYPES)) {
+  antMats[k] = new THREE.MeshPhysicalMaterial({
+    color: T.color,
+    roughness: T.metal ? 0.2 : T.termite ? 0.55 : 0.4,
+    metalness: T.metal ? 0.9 : 0.05,
+    clearcoat: T.termite ? 0.15 : 0.8,
+    clearcoatRoughness: 0.25,
+    sheen: T.termite ? 0.6 : 0,
+    sheenColor: new THREE.Color(0xffffff),
+    transparent: !!T.opacity,
+    opacity: T.opacity || 1,
+    depthWrite: !T.opacity,
+  });
+}
+const headMats = {};
+for (const [k, T] of Object.entries(ANT_TYPES)) {
+  if (T.headColor) headMats[k] = new THREE.MeshPhysicalMaterial({ color: T.headColor, roughness: 0.35, clearcoat: 0.9, clearcoatRoughness: 0.2 });
+}
+const hpBgMat = new THREE.SpriteMaterial({ color: 0x000000, opacity: 0.6, transparent: true, depthWrite: false });
+const eyeMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.1 });
+const wingMat = new THREE.MeshStandardMaterial({ color: 0xddeeff, transparent: true, opacity: 0.35, side: THREE.DoubleSide, roughness: 0.2 });
+const stingerMat = new THREE.MeshStandardMaterial({ color: 0x1a0505, roughness: 0.3 });
+const leafMat = new THREE.MeshStandardMaterial({ color: 0x3fa02a, roughness: 0.7, side: THREE.DoubleSide });
+
+function part(geo, mat, sx, sy, sz, x, y, z, shadow = true) {
+  const m = new THREE.Mesh(geo, mat);
+  m.scale.set(sx, sy, sz); m.position.set(x, y, z);
+  m.castShadow = shadow;
+  return m;
+}
+
+function buildAnt(type) {
+  const T = ANT_TYPES[type];
+  const mat = antMats[type].clone();
+  const hsl = mat.color.getHSL({}, THREE.SRGBColorSpace);
+  mat.color.setHSL(
+    hsl.h + (Math.random() - 0.5) * 2 * T.hueJitter,
+    THREE.MathUtils.clamp(hsl.s + (Math.random() - 0.5) * 0.2, 0, 1),
+    THREE.MathUtils.clamp(hsl.l + (Math.random() - 0.5) * 0.1, 0.06, 0.9),
+    THREE.SRGBColorSpace
+  );
+  const abdMat = T.abdColor ? new THREE.MeshStandardMaterial({ color: T.abdColor, emissive: T.abdColor, emissiveIntensity: 0.6, roughness: 0.3 }) : null;
+  const shadow = !T.opacity;
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.position.y = 0.2;
+  root.add(body);
+
+  const abdLen = 0.24 * T.abd * (T.abdLong || 1);
+  const headMat = headMats[type] || mat;
+  if (T.termite) {
+    // termites: no thin waist, a long ringed abdomen, blind head and straight beaded antennae
+    body.add(part(GEO.sphere, abdMat || mat, 0.15 * T.abd, 0.11 * T.abd, abdLen, 0, 0.02, -0.12 - abdLen, shadow));
+    for (let r = 1; r < 4; r++) {
+      body.add(part(GEO.sphere, abdMat || mat, 0.155 * T.abd, 0.115 * T.abd, 0.03, 0, 0.02, -0.12 - abdLen * (r / 2), false));
+    }
+    body.add(part(GEO.sphere, mat, 0.1, 0.075, 0.15, 0, 0, 0, shadow));
+  } else {
+    body.add(part(GEO.sphere, abdMat || mat, 0.17 * T.abd, 0.14 * T.abd, abdLen, 0, 0.05, -0.16 - abdLen, shadow));
+    body.add(part(GEO.sphere, mat, 0.05, 0.05, 0.06, 0, 0.01, -0.13, false));
+    body.add(part(GEO.sphere, mat, 0.09, 0.08, 0.14, 0, 0, 0, shadow));
+  }
+  const hs = T.head;
+  const headLen = T.termite && T.headColor ? 1.5 : 1;
+  body.add(part(GEO.sphere, headMat, 0.11 * hs, 0.09 * hs, 0.11 * hs * headLen, 0, 0.02, 0.19 + 0.04 * hs * headLen, shadow));
+  for (const s of [-1, 1]) {
+    if (!T.termite) body.add(part(GEO.sphere, eyeMat, 0.03 * hs, 0.035 * hs, 0.03 * hs, s * 0.075 * hs, 0.05 * hs, 0.24 + 0.04 * hs, false));
+    const mandLen = T.dodger ? 0.12 : T.headColor ? 0.13 : 0.07;
+    const mand = part(GEO.sphere, T.headColor ? stingerMat : mat, 0.02 * hs, 0.02 * hs, mandLen * hs, s * 0.04 * hs, -0.02, 0.3 + 0.06 * hs * headLen, false);
+    mand.rotation.y = -s * (T.dodger ? 0.15 : T.headColor ? 0.25 : 0.5);
+    body.add(mand);
+    const ant = new THREE.Mesh(GEO.antenna, mat);
+    ant.position.set(s * 0.04 * hs, 0.07 * hs, 0.25 + 0.04 * hs);
+    ant.rotation.set(T.termite ? -0.25 : -0.7, s * (T.termite ? 0.4 : 0.5), 0);
+    body.add(ant);
+  }
+  if (T.flier) {
+    for (const s of [-1, 1]) {
+      const w = new THREE.Mesh(GEO.wing, wingMat);
+      w.scale.set(1, 1.5, 1);
+      w.position.set(s * 0.14, 0.1, -0.3);
+      w.rotation.set(-Math.PI / 2 + 0.05, 0, s * 0.12);
+      w.userData.side = s;
+      body.add(w);
+      (body.userData.wings ||= []).push(w);
+    }
+  }
+  if (T.queen) {
+    for (const s of [-1, 1]) {
+      const w = new THREE.Mesh(GEO.wing, wingMat);
+      w.position.set(s * 0.18, 0.12, -0.35);
+      w.rotation.set(-Math.PI / 2 + 0.15, 0, s * 0.35);
+      body.add(w);
+    }
+  }
+  if (T.stinger) {
+    const st = new THREE.Mesh(GEO.stinger, stingerMat);
+    st.position.set(0, 0.03, -0.16 - abdLen * 2 - 0.04);
+    body.add(st);
+  }
+  if (T.shield) {
+    const leaf = part(GEO.sphere, leafMat, 0.26, 0.015, 0.34, 0, 0.3, 0.3);
+    leaf.rotation.x = -1.0;
+    body.add(leaf);
+  }
+  if (T.healer) {
+    const cross = new THREE.Group();
+    const cm = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    cross.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.03), cm), new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.1), cm));
+    cross.position.set(0, 0.11, 0);
+    body.add(cross);
+  }
+
+  const legs = [];
+  const baseYaw = [-0.6, 0.05, 0.65];
+  for (let p = 0; p < 3; p++) {
+    for (const side of [1, -1]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(side * 0.06, -0.02, 0.06 - p * 0.065);
+      const femur = new THREE.Mesh(GEO.femur, mat);
+      femur.rotation.z = 0.55;
+      const tibia = new THREE.Mesh(GEO.tibia, mat);
+      tibia.position.set(0.2, 0, 0);
+      tibia.rotation.z = -1.75;
+      femur.add(tibia);
+      pivot.add(femur);
+      body.add(pivot);
+      legs.push({ pivot, side, base: baseYaw[p], group: (p + (side > 0 ? 0 : 1)) % 2 });
+    }
+  }
+  return { root, body, legs, mat, abdMat };
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const state = {
+  mode: 'menu', // menu | playing | paused | shop | over | won
+  wave: 0, score: 0, kills: 0, sugar: 0,
+  toSpawn: [], spawnTimer: 0, spawnInterval: 0.6, waveTotal: 1,
+  waveBreak: 0, combo: 0, comboTimer: 0, goldenTimer: -1,
+  pendingWave: false, seen: new Set(),
+  hillOrder: [], hillIdx: 0, maxAlive: 20, enraged: false,
+  time: 0,
+};
+const player = {
+  pos: new THREE.Vector3(0, 0, 5), vel: new THREE.Vector3(),
+  yaw: 0, pitch: 0, onGround: true, hp: 100,
+  weapon: 'blaster', ammo: {}, reloading: 0, reloadTotal: 1, fireCd: 0, spin: 0,
+  fuel: 100, sprayLock: false, sprayHiss: 0, sprayEmit: 0,
+  heat: 0, heatLock: false, beamHum: 0, beamBurn: 0,
+  mines: 0, mineCd: 0, traps: 0, trapCd: 0,
+  jam: null, jamT: 0, webbed: 0, stompGrace: 0, airSafe: false, jumpCd: 0, bleed: 0, bleedTick: 0, stamina: 100, staminaWait: 0, tired: false,
+  meleeCd: 0, meleeAnim: 0, meleePending: -1,
+  slapCd: 0, bobT: 0, shake: 0, recoil: 0, damageFlash: 0, swapAnim: 0,
+};
+let ants = [];
+let screenAnts = [];
+let screenSplats = [];
+const decals = [];
+const particles = [];
+const tracers = [];
+const mines = [];
+const blasts = [];
+const spits = [];
+const rings = [];
+const floaters = [];
+const shells = [];
+const bolts = [];
+const traps = [];
+const webs = [];
+const fullAmmo = () => Object.fromEntries(Object.entries(MAG).map(([id, f]) => [id, f()]));
+const keys = {};
+let mouseDown = false;
+
+// ============================================================
+// VIEWMODELS
+// ============================================================
+const metalMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.7, roughness: 0.35 });
+
+const gun = new THREE.Group();
+{
+  const orange = new THREE.MeshStandardMaterial({ color: 0xff8a1e, metalness: 0.2, roughness: 0.5 });
+  const glow = new THREE.MeshStandardMaterial({ color: 0x6aff3a, emissive: 0x3aff1a, emissiveIntensity: 1.4, transparent: true, opacity: 0.85 });
+  gun.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.42), orange));
+  const top = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.3), metalMat); top.position.set(0, 0.075, -0.02); gun.add(top);
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.2, 14), glow);
+  tank.rotation.x = Math.PI / 2; tank.position.set(0, 0.12, 0.05); gun.add(tank);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.26, 12), metalMat);
+  barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.01, -0.33); gun.add(barrel);
+  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.05, 12), orange);
+  nozzle.rotation.x = Math.PI / 2; nozzle.position.set(0, 0.01, -0.47); gun.add(nozzle);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.08), metalMat);
+  grip.position.set(0, -0.12, 0.1); grip.rotation.x = 0.3; gun.add(grip);
+}
+const gunMuzzle = new THREE.Object3D(); gunMuzzle.position.set(0, 0.01, -0.5); gun.add(gunMuzzle);
+
+const sprayCan = new THREE.Group();
+{
+  const canMat = new THREE.MeshStandardMaterial({ color: 0xf4e04a, metalness: 0.5, roughness: 0.35 });
+  const labelMat = new THREE.MeshStandardMaterial({ color: 0x2f9a2a, roughness: 0.6 });
+  const capMat = new THREE.MeshStandardMaterial({ color: 0xd8262b, roughness: 0.4 });
+  sprayCan.add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.28, 16), canMat));
+  const label = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.12, 16), labelMat); label.position.y = -0.02; sprayCan.add(label);
+  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), canMat); shoulder.position.y = 0.14; sprayCan.add(shoulder);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.05, 10), capMat); cap.position.y = 0.21; sprayCan.add(cap);
+  const nz = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.04), capMat); nz.position.set(0, 0.225, -0.025); sprayCan.add(nz);
+}
+const sprayMuzzle = new THREE.Object3D(); sprayMuzzle.position.set(0, 0.225, -0.06); sprayCan.add(sprayMuzzle);
+sprayCan.rotation.x = -0.25;
+
+const sniperGun = new THREE.Group();
+{
+  const green = new THREE.MeshStandardMaterial({ color: 0x3d5a2a, roughness: 0.6 });
+  const amber = new THREE.MeshStandardMaterial({ color: 0xd08a14, roughness: 0.3, metalness: 0.3 });
+  const lens = new THREE.MeshStandardMaterial({ color: 0x66ccff, emissive: 0x113344, roughness: 0.1 });
+  sniperGun.add(new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.42), green));
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.6, 10), metalMat);
+  barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.01, -0.5); sniperGun.add(barrel);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.1, 10), amber);
+  tip.rotation.x = -Math.PI / 2; tip.position.set(0, 0.01, -0.84); sniperGun.add(tip);
+  const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.22, 12), metalMat);
+  scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.085, -0.05); sniperGun.add(scope);
+  for (const z of [-0.161, 0.061]) {
+    const l = new THREE.Mesh(new THREE.CircleGeometry(0.024, 12), lens);
+    l.position.set(0, 0.085, z); if (z > 0) l.rotation.y = Math.PI; sniperGun.add(l);
+  }
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.18), green); stock.position.set(0, -0.02, 0.28); sniperGun.add(stock);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.13, 0.06), metalMat); grip.position.set(0, -0.1, 0.06); grip.rotation.x = 0.3; sniperGun.add(grip);
+}
+const sniperMuzzle = new THREE.Object3D(); sniperMuzzle.position.set(0, 0.01, -0.9); sniperGun.add(sniperMuzzle);
+
+const laserGun = new THREE.Group();
+{
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6b3f1f, roughness: 0.6 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xd8b04a, metalness: 0.85, roughness: 0.25 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.35, roughness: 0.05, side: THREE.DoubleSide });
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.24, 10), wood);
+  handle.position.set(0, -0.17, 0.02); handle.rotation.x = 0.2; laserGun.add(handle);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.014, 10, 32), brass); laserGun.add(ring);
+  laserGun.add(new THREE.Mesh(new THREE.CircleGeometry(0.105, 32), glass));
+}
+const laserMuzzle = new THREE.Object3D(); laserMuzzle.position.set(0, 0, -0.04); laserGun.add(laserMuzzle);
+
+const gatlingGun = new THREE.Group();
+const gatBarrels = new THREE.Group();
+{
+  const pink = new THREE.MeshStandardMaterial({ color: 0xff5fa8, roughness: 0.4, metalness: 0.2 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xff3a6a, roughness: 0.4 });
+  gatlingGun.add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.13, 0.3), pink));
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.36, 8), i % 2 ? white : red);
+    b.rotation.x = Math.PI / 2; b.position.set(Math.cos(a) * 0.035, Math.sin(a) * 0.035, 0);
+    gatBarrels.add(b);
+  }
+  gatBarrels.position.set(0, 0, -0.32);
+  gatlingGun.add(gatBarrels);
+  const hopper = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, roughness: 0.05 }));
+  hopper.position.set(0, 0.15, 0.03); gatlingGun.add(hopper);
+  const ballCols = [0xff3a6a, 0x3ac8ff, 0xffe03a, 0x7aff5a, 0xb05aff];
+  for (let i = 0; i < 9; i++) {
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), new THREE.MeshStandardMaterial({ color: ballCols[i % 5] }));
+    ball.position.set(0.04 * Math.cos(i * 2.1), 0.12 + (i % 3) * 0.025, 0.03 + 0.04 * Math.sin(i * 2.1));
+    gatlingGun.add(ball);
+  }
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.15, 0.07), metalMat); grip.position.set(0, -0.12, 0.08); grip.rotation.x = 0.3; gatlingGun.add(grip);
+}
+const gatlingMuzzle = new THREE.Object3D(); gatlingMuzzle.position.set(0, 0, -0.52); gatlingGun.add(gatlingMuzzle);
+
+const coneGun = new THREE.Group();
+{
+  const wood = new THREE.MeshStandardMaterial({ color: 0x7a4a24, roughness: 0.7 });
+  const tube = new THREE.MeshStandardMaterial({ color: 0x3f5a2a, roughness: 0.5, metalness: 0.3 });
+  const t = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.065, 0.5, 14, 1, true), tube);
+  t.rotation.x = Math.PI / 2; t.position.z = -0.12; coneGun.add(t);
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.012, 8, 16), metalMat); lip.position.z = -0.37; coneGun.add(lip);
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.26), wood); stock.position.set(0, -0.03, 0.22); coneGun.add(stock);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.06), wood); grip.position.set(0, -0.11, 0.05); grip.rotation.x = 0.3; coneGun.add(grip);
+  const pc = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.1, 8), new THREE.MeshStandardMaterial({ color: 0x8a5a2a, flatShading: true }));
+  pc.rotation.x = -Math.PI / 2; pc.position.z = -0.33; coneGun.add(pc);
+}
+const coneMuzzle = new THREE.Object3D(); coneMuzzle.position.set(0, 0, -0.4); coneGun.add(coneMuzzle);
+
+const zapGun = new THREE.Group();
+const zapCoils = [];
+{
+  const body = new THREE.MeshStandardMaterial({ color: 0x2a3550, roughness: 0.4, metalness: 0.6 });
+  const copper = new THREE.MeshStandardMaterial({ color: 0xd07a3a, roughness: 0.3, metalness: 0.9 });
+  zapGun.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.11, 0.34), body));
+  for (let i = 0; i < 3; i++) {
+    const c = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 8, 16), copper);
+    c.position.z = -0.2 - i * 0.06; zapGun.add(c);
+  }
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 8), copper);
+  rod.rotation.x = Math.PI / 2; rod.position.z = -0.26; zapGun.add(rod);
+  for (const x of [-0.035, 0.035]) {
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.MeshStandardMaterial({ color: 0x9ad8ff, emissive: 0x4ab8ff, emissiveIntensity: 2.5 }));
+    orb.position.set(x, 0.08, 0.05); zapGun.add(orb); zapCoils.push(orb);
+  }
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.15, 0.065), metalMat); grip.position.set(0, -0.12, 0.08); grip.rotation.x = 0.3; zapGun.add(grip);
+}
+const zapMuzzle = new THREE.Object3D(); zapMuzzle.position.set(0, 0, -0.4); zapGun.add(zapMuzzle);
+
+const VMS = {
+  blaster:  { obj: gun, pos: new THREE.Vector3(0.27, -0.25, -0.5), muzzle: gunMuzzle },
+  spray:    { obj: sprayCan, pos: new THREE.Vector3(0.24, -0.33, -0.48), muzzle: sprayMuzzle },
+  sniper:   { obj: sniperGun, pos: new THREE.Vector3(0.24, -0.22, -0.42), muzzle: sniperMuzzle },
+  laser:    { obj: laserGun, pos: new THREE.Vector3(0.24, -0.18, -0.5), muzzle: laserMuzzle },
+  gatling:  { obj: gatlingGun, pos: new THREE.Vector3(0.26, -0.26, -0.48), muzzle: gatlingMuzzle },
+  pinecone: { obj: coneGun, pos: new THREE.Vector3(0.25, -0.24, -0.45), muzzle: coneMuzzle },
+  zapper:   { obj: zapGun, pos: new THREE.Vector3(0.25, -0.24, -0.46), muzzle: zapMuzzle },
+};
+for (const vm of Object.values(VMS)) { vm.obj.position.copy(vm.pos); vm.obj.visible = false; camera.add(vm.obj); }
+
+const muzzleLight = new THREE.PointLight(0x9aff5a, 0, 6);
+const flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xd8ff8a, transparent: true, opacity: 0.9 }));
+flashMesh.visible = false;
+gunMuzzle.add(muzzleLight, flashMesh);
+
+const shoe = new THREE.Group();
+{
+  const sole = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.38), new THREE.MeshStandardMaterial({ color: 0xf2f2f2 }));
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.3), new THREE.MeshStandardMaterial({ color: 0xd8262b }));
+  upper.position.set(0, 0.07, 0.03);
+  const toe = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), upper.material);
+  toe.scale.set(1, 0.7, 1); toe.position.set(0, 0.05, -0.13);
+  shoe.add(sole, upper, toe);
+}
+shoe.visible = false;
+camera.add(shoe);
+
+// laser beam
+const beamMesh = new THREE.Mesh(
+  (() => { const g = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true); g.translate(0, 0.5, 0); return g; })(),
+  new THREE.MeshBasicMaterial({ color: 0xfff2a0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })
+);
+beamMesh.visible = false;
+scene.add(beamMesh);
+const beamGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe080, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+beamGlow.scale.set(0.8, 0.8, 1);
+beamGlow.visible = false;
+scene.add(beamGlow);
+
+// ============================================================
+// EFFECTS
+// ============================================================
+const gooColors = [0xb7d32a, 0xd2c22a, 0x9fc81a];
+const gooMats = gooColors.map(c => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false }));
+const smearMat = new THREE.MeshBasicMaterial({ color: 0x1a0e06, transparent: true, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -3, depthWrite: false });
+const scorchMat = new THREE.MeshBasicMaterial({ color: 0x140c06, transparent: true, opacity: 0.75, polygonOffset: true, polygonOffsetFactor: -1, depthWrite: false });
+const acidDecalMat = new THREE.MeshBasicMaterial({ color: 0x7aff3a, transparent: true, opacity: 0.6, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
+const decalGeo = new THREE.CircleGeometry(1, 18);
+const partGeo = new THREE.SphereGeometry(1, 5, 4);
+const partMats = gooColors.map(c => new THREE.MeshBasicMaterial({ color: c }));
+const dirtPartMat = new THREE.MeshBasicMaterial({ color: 0x6a4a2a });
+const smokeMat = new THREE.MeshBasicMaterial({ color: 0x777777, transparent: true, opacity: 0.4, depthWrite: false });
+const mistMat = new THREE.MeshBasicMaterial({ color: 0xa8ff6a, transparent: true, opacity: 0.28, depthWrite: false });
+const leafPartMat = new THREE.MeshBasicMaterial({ color: 0x3fa02a });
+const healPartMat = new THREE.MeshBasicMaterial({ color: 0x7aff9a });
+const fireMats = [0xffb02a, 0xff6a1a, 0xffe07a].map(c => new THREE.MeshBasicMaterial({ color: c }));
+const mineGeo = new THREE.CylinderGeometry(0.26, 0.3, 0.09, 16);
+const mineMat = new THREE.MeshStandardMaterial({ color: 0x3d4a2a, roughness: 0.5, metalness: 0.6 });
+const mineLightGeo = new THREE.SphereGeometry(0.06, 10, 8);
+const mineRingGeo = (() => { const g = new THREE.RingGeometry(0.96, 1, 48); g.rotateX(-Math.PI / 2); return g; })();
+const spitGeo = new THREE.SphereGeometry(0.11, 10, 8);
+const spitMat = new THREE.MeshStandardMaterial({ color: 0x7aff3a, emissive: 0x4aff1a, emissiveIntensity: 1.2 });
+const blastGeo = new THREE.SphereGeometry(1, 18, 12);
+const ringGeo = (() => { const g = new THREE.RingGeometry(0.85, 1, 40); g.rotateX(-Math.PI / 2); return g; })();
+const blastLight = new THREE.PointLight(0xffa040, 0, 25);
+scene.add(blastLight);
+const boltCoreMat = new THREE.MeshBasicMaterial({ color: 0xeef8ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+const boltGlowMat = new THREE.MeshBasicMaterial({ color: 0x3a9cff, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false });
+const sparkMats = [new THREE.MeshBasicMaterial({ color: 0xbfe8ff }), new THREE.MeshBasicMaterial({ color: 0x5ab4ff })];
+const shellGeo = new THREE.ConeGeometry(0.09, 0.2, 8);
+const shellMat = new THREE.MeshStandardMaterial({ color: 0x8a5a2a, roughness: 0.8, flatShading: true });
+const trapPadGeo = new THREE.CircleGeometry(1, 28);
+const trapPadMat = new THREE.MeshStandardMaterial({ color: 0xffb42a, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.85, emissive: 0x6a3a00, emissiveIntensity: 0.4, polygonOffset: true, polygonOffsetFactor: -2 });
+const trapBoxMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.6 });
+const tracerMats = {
+  blaster: new THREE.LineBasicMaterial({ color: 0xc8ff6a, transparent: true, opacity: 0.9 }),
+  sniper: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 }),
+  gatling: new THREE.LineBasicMaterial({ color: 0xff7ac0, transparent: true, opacity: 0.9 }),
+};
+const DECAL_LIFE = 15, DECAL_FADE = 3, SCORCH_LIFE = 5;
+function placeDecal(obj, x, z, life = DECAL_LIFE) {
+  obj.rotation.x = -Math.PI / 2;
+  obj.rotation.z = Math.random() * Math.PI * 2;
+  obj.position.set(x, 0.012 + Math.random() * 0.004, z);
+  obj.userData.born = state.time;
+  obj.userData.life = life;
+  obj.userData.s0 = obj.scale.clone();
+  scene.add(obj);
+  decals.push(obj);
+  if (decals.length > 180) scene.remove(decals.shift());
+}
+
+function addDecal(x, z, size) {
+  const g = new THREE.Group();
+  const mat = gooMats[(Math.random() * gooMats.length) | 0];
+  const main = new THREE.Mesh(decalGeo, mat);
+  main.scale.set(size * (0.8 + Math.random() * 0.5), size * (0.6 + Math.random() * 0.5), 1);
+  g.add(main);
+  for (let i = 0; i < 4; i++) {
+    const blob = new THREE.Mesh(decalGeo, mat);
+    const a = Math.random() * Math.PI * 2, r = size * (0.8 + Math.random() * 0.8);
+    blob.position.set(Math.cos(a) * r, Math.sin(a) * r, 0);
+    blob.scale.setScalar(size * (0.12 + Math.random() * 0.2));
+    g.add(blob);
+  }
+  const smear = new THREE.Mesh(decalGeo, smearMat);
+  smear.scale.set(size * 0.25, size * 0.45, 1); smear.position.z = 0.001;
+  smear.rotation.z = Math.random() * Math.PI;
+  g.add(smear);
+  placeDecal(g, x, z);
+}
+
+function addFlatDecal(mat, x, z, size, life = DECAL_LIFE) {
+  const m = new THREE.Mesh(decalGeo, mat);
+  m.scale.setScalar(size);
+  placeDecal(m, x, z, life);
+}
+
+function burst(pos, count, size, speed, mats = partMats, grav = 14) {
+  for (let i = 0; i < count; i++) {
+    if (particles.length > 550) break;
+    const m = new THREE.Mesh(partGeo, mats[(Math.random() * mats.length) | 0]);
+    m.scale.setScalar(size * (0.5 + Math.random()));
+    m.position.copy(pos);
+    const a = Math.random() * Math.PI * 2;
+    const v = new THREE.Vector3(Math.cos(a) * speed * Math.random(), speed * (0.5 + Math.random()), Math.sin(a) * speed * Math.random());
+    scene.add(m);
+    particles.push({ m, v, life: 0.6 + Math.random() * 0.6, grav, grow: 0 });
+  }
+}
+
+function addTracer(a, b, mat) {
+  const geo = new THREE.BufferGeometry().setFromPoints([a.clone(), b.clone()]);
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  tracers.push({ line, life: mat === tracerMats.sniper ? 0.12 : 0.05 });
+}
+
+function addRing(pos, radius, color, life = 0.5) {
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(ringGeo, mat);
+  m.position.set(pos.x, 0.05, pos.z);
+  scene.add(m);
+  rings.push({ m, radius, life, max: life });
+}
+
+function jaggedPath(from, to, jitter) {
+  const len = from.distanceTo(to);
+  const n = Math.max(4, Math.round(len * 2.5));
+  const path = new THREE.CurvePath();
+  let prev = from.clone();
+  for (let i = 1; i <= n; i++) {
+    const p = from.clone().lerp(to, i / n);
+    if (i < n) p.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(jitter * len * 0.25 + 0.08));
+    path.add(new THREE.LineCurve3(prev, p));
+    prev = p;
+  }
+  return { path, n };
+}
+
+// a glowing, flickering lightning arc between two points
+function addBolt(from, to) {
+  const g = new THREE.Group();
+  const { path, n } = jaggedPath(from, to, 0.35);
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(path, n * 2, 0.018, 4), boltCoreMat));
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(path, n * 2, 0.06, 5), boltGlowMat));
+  // a couple of small side forks
+  for (let k = 0; k < 2; k++) {
+    const start = path.getPointAt(0.2 + Math.random() * 0.6);
+    const end = start.clone().add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).multiplyScalar(0.9));
+    const fork = jaggedPath(start, end, 0.5);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(fork.path, fork.n * 2, 0.012, 3), boltCoreMat));
+  }
+  scene.add(g);
+  burst(to, 6, 0.02, 2.5, sparkMats, 6);
+  bolts.push({ g, life: 0.22 });
+}
+
+function disposeBolt(b) {
+  scene.remove(b.g);
+  b.g.traverse(o => o.geometry && o.geometry.dispose());
+}
+
+function addFloater(pos, text, color = '#fff', size = 18) {
+  floaters.push({ pos: pos.clone(), text, color, size, life: 0.9 });
+  if (floaters.length > 70) floaters.shift();
+}
+
+// ============================================================
+// HUD
+// ============================================================
+const $ = id => document.getElementById(id);
+const hud = {
+  wave: $('wave'), waveprog: $('waveprog'), score: $('score'), sugar: $('sugar'), combo: $('combo'), antsleft: $('antsleft'),
+  hptxt: $('hptxt'), hpfill: $('hpfill'), stbar: $('stbar'), stfill: $('stfill'),
+  cdShoe: $('cd-shoe'), cdSlap: $('cd-slap'), cdMine: $('cd-mine'), cdTrap: $('cd-trap'), rage: $('rage'),
+  hotbar: $('hotbar'), wname: $('wname'), ammo: $('ammo'), ammosub: $('ammosub'),
+  vignette: $('vignette'), hitmarker: $('hitmarker'), crosshair: $('crosshair'),
+  cm: $('center-msg'), cmT: $('cm-t'), cmS: $('cm-s'), warn: $('onscreen-warn'),
+  menu: $('menu'), menuSub: $('menu-sub'), menuStats: $('menu-stats'), menuCta: $('menu-cta'),
+  shop: $('shop'), shopSub: $('shop-sub'), shopSugar: $('shop-sugar'), shopGrid: $('shop-grid'), shopGo: $('shop-go'),
+  shopIntel: $('shop-intel'), shopTabs: $('shop-tabs'),
+};
+const _cache = new Map();
+function setText(el, v) { if (_cache.get(el) !== v) { _cache.set(el, v); el.textContent = v; } }
+function setHTML(el, v) { const k = 'h:' + el.id; if (_cache.get(k) !== v) { _cache.set(k, v); el.innerHTML = v; } }
+function setStyle(el, prop, v) { const k = el.id + ':' + prop; if (_cache.get(k) !== v) { _cache.set(k, v); el.style[prop] = v; } }
+function setClass(el, v) { if (el.className !== v) el.className = v; }
+
+let msgTimer = 0, hitTimer = 0;
+function showMessage(t, s = '', dur = 2.2) {
+  hud.cmT.textContent = t; hud.cmS.textContent = s;
+  hud.cm.style.opacity = 1; msgTimer = dur;
+}
+function hitMarker() { hitTimer = 0.12; }
+
+const slotEls = {};
+for (const w of WEAPONS) {
+  const el = document.createElement('div');
+  el.className = 'slot';
+  el.innerHTML = `<div class="k">${w.slot}</div><div class="n">${w.name}</div><div class="a"></div>`;
+  hud.hotbar.appendChild(el);
+  slotEls[w.id] = { el, a: el.querySelector('.a') };
+}
+
+// ============================================================
+// OVERLAY CANVAS (ants on your face, floating numbers) + MINIMAP
+// ============================================================
+const overlay = $('overlay');
+const octx = overlay.getContext('2d');
+const mm = $('minimap');
+const mctx = mm.getContext('2d');
+let W = innerWidth, H = innerHeight;
+function resizeOverlay() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  W = innerWidth; H = innerHeight;
+  overlay.width = W * dpr; overlay.height = H * dpr;
+  overlay.style.width = W + 'px'; overlay.style.height = H + 'px';
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mm.width = 160 * dpr; mm.height = 160 * dpr;
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resizeOverlay();
+
+function spawnScreenAnt(ant) {
+  const T = ant.T;
+  const avgSpeed = (T.speed[0] + T.speed[1]) / 2;
+  screenAnts.push({
+    x: W * (0.15 + Math.random() * 0.7), y: H + 40,
+    ang: -Math.PI / 2 + (Math.random() - 0.5) * 1.2,
+    size: Math.max(45, (62 + Math.random() * 20) * Math.min(ant.scale, 2)),
+    speed: (120 + Math.random() * 70) * Math.sqrt(avgSpeed / 2.5),
+    walk: Math.random() * 10, seed: Math.random() * 100,
+    color: ant.hex, alpha: T.opacity ? 0.45 : 1,
+    dps: T.screenDps || 2,
+  });
+}
+
+function drawScreenAnt(a) {
+  const s = a.size;
+  octx.save();
+  octx.globalAlpha = a.alpha;
+  octx.translate(a.x, a.y);
+  octx.rotate(a.ang);
+  octx.strokeStyle = a.color; octx.fillStyle = a.color;
+  octx.lineCap = 'round';
+  octx.lineWidth = s * 0.035;
+  for (let i = 0; i < 3; i++) {
+    for (const side of [-1, 1]) {
+      const grp = (i + (side > 0 ? 0 : 1)) % 2;
+      const sw = Math.sin(a.walk + grp * Math.PI) * 0.35;
+      const hx = s * (0.08 - i * 0.08);
+      const baseA = [0.7, 0, -0.7][i] + sw;
+      const knee = { x: hx + Math.sin(baseA) * s * 0.22, y: side * s * 0.22 };
+      const foot = { x: knee.x + Math.sin(baseA) * s * 0.25 + (i - 1) * -s * 0.12, y: side * s * 0.42 };
+      octx.beginPath(); octx.moveTo(hx, 0); octx.lineTo(knee.x, knee.y); octx.lineTo(foot.x, foot.y); octx.stroke();
+    }
+  }
+  octx.lineWidth = s * 0.02;
+  for (const side of [-1, 1]) {
+    const wig = Math.sin(a.walk * 0.7 + side) * 0.15;
+    octx.beginPath(); octx.moveTo(s * 0.33, side * s * 0.04);
+    octx.lineTo(s * 0.5, side * s * (0.12 + wig)); octx.lineTo(s * 0.66, side * s * (0.2 + wig)); octx.stroke();
+  }
+  const ell = (x, rx, ry) => { octx.beginPath(); octx.ellipse(x, 0, rx, ry, 0, 0, Math.PI * 2); octx.fill(); };
+  ell(-s * 0.36, s * 0.24, s * 0.17);
+  ell(-s * 0.1, s * 0.05, s * 0.04);
+  ell(s * 0.05, s * 0.13, s * 0.08);
+  ell(s * 0.28, s * 0.12, s * 0.11);
+  octx.fillStyle = 'rgba(255,255,255,0.25)';
+  octx.beginPath(); octx.ellipse(-s * 0.4, -s * 0.06, s * 0.1, s * 0.04, 0, 0, Math.PI * 2); octx.fill();
+  octx.beginPath(); octx.ellipse(s * 0.3, -s * 0.05, s * 0.04, s * 0.02, 0, 0, Math.PI * 2); octx.fill();
+  octx.restore();
+}
+
+function drawScreenSplat(sp) {
+  octx.save();
+  octx.globalAlpha = Math.min(1, sp.life) * 0.85;
+  octx.translate(sp.x, sp.y);
+  octx.fillStyle = sp.color;
+  for (const b of sp.blobs) { octx.beginPath(); octx.arc(b.x, b.y, b.r, 0, Math.PI * 2); octx.fill(); }
+  for (const d of sp.drips) { octx.fillRect(d.x - d.w / 2, 0, d.w, d.len * (1.6 - sp.life * 0.4)); }
+  if (!sp.acid) {
+    octx.fillStyle = 'rgba(20,10,5,0.9)';
+    octx.beginPath(); octx.ellipse(0, 0, sp.r * 0.35, sp.r * 0.2, sp.rot, 0, Math.PI * 2); octx.fill();
+  }
+  octx.restore();
+}
+
+function addScreenSplat(x, y, r, acid = false) {
+  const blobs = [{ x: 0, y: 0, r }];
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * Math.PI * 2, d = r * (0.6 + Math.random() * 0.9);
+    blobs.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, r: r * (0.12 + Math.random() * 0.3) });
+  }
+  const drips = [];
+  for (let i = 0; i < 3; i++) drips.push({ x: (Math.random() - 0.5) * r, w: 4 + Math.random() * 6, len: r * (0.6 + Math.random()) });
+  const color = acid ? 'rgba(122,255,58,0.8)' : ['#b7d32a', '#d2c22a', '#9fc81a'][(Math.random() * 3) | 0];
+  screenSplats.push({ x, y, r, blobs, drips, life: 2.2, rot: Math.random() * 3, color, acid });
+}
+
+function killScreenAnt(i, viaSlap = false) {
+  const a = screenAnts[i];
+  addScreenSplat(a.x, a.y, a.size * 0.35);
+  screenAnts.splice(i, 1);
+  addScore(15);
+  state.sugar += 1;
+  state.kills++;
+  viaSlap ? sfx.slap() : sfx.squish();
+}
+
+const _proj = new THREE.Vector3();
+function drawFloaters() {
+  octx.save();
+  octx.textAlign = 'center';
+  octx.lineJoin = 'round';
+  for (const f of floaters) {
+    _proj.copy(f.pos).project(camera);
+    if (_proj.z > 1 || _proj.z < -1) continue;
+    const x = (_proj.x + 1) / 2 * W, y = (1 - _proj.y) / 2 * H;
+    octx.globalAlpha = Math.min(1, f.life * 2.2);
+    octx.font = `900 ${f.size}px "Segoe UI", sans-serif`;
+    octx.lineWidth = 4; octx.strokeStyle = 'rgba(0,0,0,0.75)';
+    octx.strokeText(f.text, x, y);
+    octx.fillStyle = f.color;
+    octx.fillText(f.text, x, y);
+  }
+  octx.restore();
+}
+
+function drawMinimap() {
+  const S = 160, cx = S / 2, cy = S / 2, R = S / 2 - 2, range = 32;
+  mctx.clearRect(0, 0, S, S);
+  mctx.save();
+  mctx.beginPath(); mctx.arc(cx, cy, R, 0, Math.PI * 2); mctx.clip();
+  mctx.fillStyle = 'rgba(30,60,20,0.55)'; mctx.fillRect(0, 0, S, S);
+  mctx.strokeStyle = 'rgba(255,255,255,0.12)'; mctx.lineWidth = 1;
+  for (const r of [R / 3, (2 * R) / 3]) { mctx.beginPath(); mctx.arc(cx, cy, r, 0, Math.PI * 2); mctx.stroke(); }
+  const cyw = Math.cos(player.yaw), syw = Math.sin(player.yaw);
+  const toMap = (x, z, clamp = true) => {
+    const rx = x - player.pos.x, rz = z - player.pos.z;
+    const right = rx * cyw - rz * syw;
+    const fwd = -rx * syw - rz * cyw;
+    let mx = right / range * R, my = -fwd / range * R;
+    const d = Math.hypot(mx, my);
+    if (clamp && d > R - 4) { mx *= (R - 4) / d; my *= (R - 4) / d; }
+    return [cx + mx, cy + my];
+  };
+  mctx.fillStyle = '#8a5a2a';
+  for (const [x, z] of HILLS) { const [px, py] = toMap(x, z); mctx.fillRect(px - 3, py - 3, 6, 6); }
+  for (const a of ants) {
+    const [px, py] = toMap(a.root.position.x, a.root.position.z);
+    mctx.fillStyle = a.T.queen ? '#ff3cf0' : a.hex;
+    mctx.beginPath(); mctx.arc(px, py, Math.min(6, 1.3 + a.scale * 1.3), 0, Math.PI * 2); mctx.fill();
+    if (a.T.flee || a.T.queen || a.T.opacity) { mctx.strokeStyle = 'rgba(255,255,255,0.85)'; mctx.lineWidth = 1; mctx.stroke(); }
+  }
+  for (const b of mines) { const [px, py] = toMap(b.m.position.x, b.m.position.z); mctx.fillStyle = '#ff0'; mctx.fillRect(px - 2, py - 2, 4, 4); }
+  for (const tr of traps) { const [px, py] = toMap(tr.x, tr.z); mctx.strokeStyle = '#ffb42a'; mctx.lineWidth = 2; mctx.beginPath(); mctx.arc(px, py, 4, 0, Math.PI * 2); mctx.stroke(); }
+  mctx.restore();
+  mctx.fillStyle = '#fff';
+  mctx.beginPath(); mctx.moveTo(cx, cy - 7); mctx.lineTo(cx - 5, cy + 5); mctx.lineTo(cx + 5, cy + 5); mctx.fill();
+  mctx.strokeStyle = 'rgba(255,255,255,0.5)'; mctx.lineWidth = 2;
+  mctx.beginPath(); mctx.arc(cx, cy, R, 0, Math.PI * 2); mctx.stroke();
+}
+
+// ============================================================
+// WAVES
+// ============================================================
+function pickSpecies(n) {
+  const pool = Object.entries(ANT_TYPES).filter(([, T]) => T.weight > 0 && T.minWave <= n);
+  let r = Math.random() * pool.reduce((s, [, T]) => s + T.weight, 0);
+  for (const [k, T] of pool) { r -= T.weight; if (r <= 0) return k; }
+  return 'worker';
+}
+
+function addGroup(list, k) {
+  const g = ANT_TYPES[k].swarm || 1;
+  for (let i = 0; i < g; i++) list.push(k);
+}
+
+function buildWave(n) {
+  const list = [];
+  for (const [k, T] of Object.entries(ANT_TYPES)) if (T.minWave === n && T.weight > 0) { addGroup(list, k); addGroup(list, k); }
+  while (list.length < waveCount(n)) addGroup(list, pickSpecies(n));
+  if (isFinal(n)) {
+    // the last stand: extra heavy hitters mixed through the wave
+    for (const k of ['titan', 'titan', 'titan', 'titan', 'titan', 'titan', 'exploder', 'exploder', 'exploder', 'exploder', 'nurse', 'nurse', 'nurse', 'acid', 'acid', 'termiteSoldier', 'termiteSoldier'])
+      list.splice(Math.floor(Math.random() * list.length), 0, k);
+  }
+  const queens = QUEEN_WAVES[n] || 0;
+  for (let q = 0; q < queens; q++) list.splice(Math.floor(list.length * q / queens + list.length / (queens * 3)), 0, 'queen');
+  return list;
+}
+
+function newSpeciesFor(n) {
+  return Object.entries(ANT_TYPES).filter(([, T]) => T.minWave === n && T.weight > 0);
+}
+
+function startWave() {
+  state.wave++;
+  state.toSpawn = buildWave(state.wave);
+  state.waveTotal = state.toSpawn.length;
+  // ants trickle out over the whole wave instead of all at once
+  const final = isFinal(state.wave);
+  const duration = final ? 60 : Math.min(50, 18 + state.wave * 1.2);
+  state.spawnInterval = Math.max(0.25, duration / state.waveTotal);
+  state.maxAlive = final ? 95 : Math.min(70, 12 + Math.round(state.wave * 1.8));
+  state.spawnTimer = 1.5;
+  state.enraged = false;
+  state.goldenTimer = goldenWave(state.wave) ? 8 + Math.random() * 10 : -1;
+  const queens = QUEEN_WAVES[state.wave] || 0;
+  const sub = final ? `FINAL WAVE: ${queens} ROYAL QUEENS, ${state.toSpawn.length} ANTS. SURVIVE!` : queens > 1 ? `${queens} QUEENS ARE COMING` : queens ? 'THE QUEEN IS COMING' : `${state.toSpawn.length} ants incoming`;
+  showMessage(`WAVE ${state.wave}`, sub, 2.5);
+  sfx.wave();
+}
+
+// spawn evenly from every nest: cycle through a shuffled order of all hills
+function nextHill() {
+  if (state.hillIdx >= state.hillOrder.length) {
+    state.hillOrder = HILLS.map((_, i) => i).sort(() => Math.random() - 0.5);
+    state.hillIdx = 0;
+  }
+  return HILLS[state.hillOrder[state.hillIdx++]];
+}
+
+const rand = ([a, b]) => a + Math.random() * (b - a);
+
+function spawnAnt(type, at = null, hill = null) {
+  const T = ANT_TYPES[type];
+  const { root, body, legs, mat, abdMat } = buildAnt(type);
+  const scale = rand(T.scale);
+  root.scale.setScalar(scale);
+  const baseHp = T.hp[0] + Math.floor(Math.random() * (T.hp[1] - T.hp[0] + 1));
+  const qb = T.queen ? queenBoost(state.wave) : null;
+  const hp = Math.round(baseHp * ANT_HP_MULT * (qb ? qb.hp : lateHpMult(state.wave)) * 10) / 10;
+  let hpBar = null;
+  if (hp > 1) {
+    hpBar = new THREE.Group();
+    hpBar.position.y = 0.75;
+    const bg = new THREE.Sprite(hpBgMat);
+    bg.scale.set(0.5, 0.07, 1);
+    const fill = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x5aff4a, depthWrite: false }));
+    fill.center.set(0, 0.5);
+    fill.position.x = -0.24;
+    fill.scale.set(0.48, 0.05, 1);
+    hpBar.add(bg, fill);
+    hpBar.userData.fill = fill;
+    hpBar.visible = !!T.queen;
+    root.add(hpBar);
+  }
+  let x, z, home = null;
+  if (at) { x = at.x + (Math.random() - 0.5) * 2; z = at.z + (Math.random() - 0.5) * 2; }
+  else {
+    home = hill || nextHill();
+    x = home[0] + (Math.random() - 0.5) * 1.8; z = home[1] + (Math.random() - 0.5) * 1.8;
+  }
+  root.position.set(x, 0, z);
+  const heading = Math.atan2(player.pos.x - x, player.pos.z - z);
+  root.rotation.y = heading;
+  scene.add(root);
+  ants.push({
+    type, T, root, body, legs, mat, abdMat, hpBar, hp, maxHp: hp, heading, scale, home,
+    hex: '#' + mat.color.getHexString(),
+    seed: Math.random() * 100, walk: Math.random() * 10, life: 0,
+    hitFlash: 0, biteCd: 0, spawnCd: 4, alive: true,
+    leapCd: 1 + Math.random() * 2, leapT: 0,
+    chargeCd: 1 + Math.random() * 2, windT: 0, chargeT: 0, chargeHeading: 0,
+    dodgeCd: 0, dodgeT: 0, dodgeX: 0, dodgeZ: 0,
+    spitCd: 1 + Math.random() * 1.5, healCd: 1 + Math.random() * 2, webCd: 1.5 + Math.random() * 2,
+    accum: 0, accumT: 0, lastHit: -99, rage: false, slowed: 0, qb,
+    dmgMult: qb ? qb.dmg : 1,
+    speed: rand(T.speed) * ANT_SPEED_MULT * (qb ? qb.speed : lateSpeedMult(state.wave)),
+  });
+  if (state.enraged && !T.flee) enrageAnt(ants[ants.length - 1]);
+  discover(type);
+  if (T.queen) {
+    sfx.queen();
+    const tier = queenTier(state.wave);
+    showMessage(tier ? `THE QUEEN · LEVEL ${tier + 1}` : 'THE QUEEN', tier ? 'Older and stronger: more health, faster healing, bigger broods!' : 'Heals herself and spawns ants. Kill her and the colony goes berserk!', 3);
+  }
+  else if (T.flee) { sfx.gold(); showMessage('GOLDEN ANT!', `Catch it for +${goldenSugar(state.wave)} sugar before it escapes`, 2.8); }
+  else if (T.intro && !state.seen.has(type)) {
+    state.seen.add(type);
+    const r = resistLines(T);
+    showMessage(`NEW: ${T.name.toUpperCase()}`, T.intro + (r.length ? ` · ${r.join(' · ')}` : ''), 3.2);
+  }
+}
+
+function enrageAnt(a) {
+  if (a.rage) return;
+  a.rage = true;
+  a.speed *= RAGE_SPEED;
+  a.maxHp *= RAGE_HP;
+  a.hp *= RAGE_HP;
+  updateHpBar(a);
+}
+
+function checkQueensGone() {
+  if (state.enraged) return;
+  if (ants.some(a => a.alive && a.T.queen) || state.toSpawn.includes('queen')) return;
+  state.enraged = true;
+  for (const a of ants) if (a.alive && !a.T.flee) enrageAnt(a);
+  sfx.rage();
+  player.shake = Math.max(player.shake, 0.6);
+  showMessage('THE COLONY IS ENRAGED!', 'With their queen dead, the ants are faster, tougher and hit harder', 3);
+}
+
+const antDmg = a => a.T.dmg * ANT_DAMAGE_MULT * a.dmgMult * (a.rage ? RAGE_DMG : 1);
+
+function antsRemaining() {
+  return state.toSpawn.length + ants.length + screenAnts.length;
+}
+
+// ============================================================
+// COMBAT
+// ============================================================
+function addScore(base) {
+  state.combo++;
+  state.comboTimer = 1.6;
+  const mult = Math.min(1 + Math.floor(state.combo / 5), 8);
+  state.score += base * mult;
+}
+
+function removeAnt(ant) {
+  ant.alive = false;
+  scene.remove(ant.root);
+  ant.mat.dispose();
+  if (ant.abdMat) ant.abdMat.dispose();
+  if (ant.hpBar) ant.hpBar.userData.fill.material.dispose();
+}
+
+const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _c = new THREE.Vector3(), _tmp = new THREE.Vector3();
+function antCenter(ant, out) {
+  out.copy(ant.root.position);
+  out.y += 0.17 * ant.scale;
+  return out;
+}
+
+function updateHpBar(ant) {
+  if (!ant.hpBar) return;
+  const f = Math.max(0, ant.hp / ant.maxHp);
+  const fill = ant.hpBar.userData.fill;
+  ant.hpBar.visible = f < 1 || !!ant.T.queen;
+  fill.scale.x = 0.48 * f;
+  fill.material.color.setHSL(f * 0.33, 1, 0.5);
+}
+
+function killAnt(ant) {
+  if (!ant.alive) return;
+  removeAnt(ant);
+  const p = ant.root.position;
+  const s = ant.scale;
+  addDecal(p.x, p.z, 0.35 * s);
+  burst(new THREE.Vector3(p.x, 0.25 * s, p.z), ant.T.queen ? 60 : 14, 0.035 * Math.sqrt(s), 3 + s);
+  const golden = ant.T.flee;
+  addScore(golden ? goldenScore(state.wave) : ant.T.score);
+  const sugar = golden ? goldenSugar(state.wave) : Math.round(ant.T.sugar * lateSugarMult(state.wave));
+  state.sugar += sugar;
+  state.kills++;
+  addFloater(new THREE.Vector3(p.x, 0.6 * s + 0.4, p.z), `+${sugar}`, '#ffd84a', 16 + Math.min(14, sugar / 6));
+  sfx.squish();
+  if (ant.T.queen) { player.shake = 0.8; showMessage('QUEEN SQUISHED!', `+1000 score · +${sugar} sugar`, 2.5); checkQueensGone(); }
+  if (golden) { sfx.gold(); showMessage('GOLDEN ANT CAUGHT!', `+${sugar} sugar`, 2.2); }
+  if (ant.T.exploder) explosion(p.clone(), { radius: 3.5, antDmg: 5, playerDmg: antDmg(ant), color: 0xff7a1a });
+  if (ant.T.splits && (ant.gen || 0) < ant.T.splits) splitAnt(ant);
+}
+
+// pharaoh ants "bud": a killed one splits into two smaller, faster, weaker copies
+function splitAnt(parent) {
+  const gen = (parent.gen || 0) + 1;
+  for (let k = 0; k < 2; k++) {
+    spawnAnt(parent.type, parent.root.position);
+    const c = ants[ants.length - 1];
+    c.gen = gen;
+    c.scale = parent.scale * 0.8;
+    c.root.scale.setScalar(c.scale);
+    c.maxHp = c.hp = Math.max(1, Math.round(parent.maxHp * 0.5));
+    c.speed = parent.speed * 1.1;
+    if (c.hpBar && c.maxHp <= 1) c.hpBar.visible = false;
+  }
+  addRing(parent.root.position, 1.2, 0xffb04a, 0.35);
+}
+
+// leaf shields only stop small physical shots
+const SHIELD_BLOCKS = new Set(['blaster', 'gatling']);
+
+// opts.kind: blaster, gatling, sniper, spray, laser, blast, melee, stomp, shock, trap
+function stopCharge(ant, zapped = false) {
+  ant.windT = 0; ant.chargeT = 0;
+  ant.chargeCd = 3 + Math.random() * 2;
+  if (!ant.rage) ant.mat.emissive.setRGB(0, 0, 0);
+  ant.body.position.x = 0;
+  if (zapped) addFloater(antCenter(ant, new THREE.Vector3()).setY(0.9 * ant.scale + 0.2), 'CHARGE STOPPED', '#9ad8ff', 13);
+}
+
+// weapon damage scales with distance: RANGE_NEAR_MULT up close, falling to RANGE_FAR_MULT at RANGE_FAR metres
+const RANGED_KINDS = new Set(['blaster', 'gatling', 'sniper', 'spray', 'laser', 'shock']);
+const RANGE_NEAR = 3, RANGE_FAR = 25, RANGE_NEAR_MULT = 1.3, RANGE_FAR_MULT = 0.6;
+// the sniper is the opposite: weak up close, strongest far away
+const rangeMult = (d, kind) => {
+  let k = Math.min(1, Math.max(0, (d - RANGE_NEAR) / (RANGE_FAR - RANGE_NEAR)));
+  if (kind === 'sniper') k = 1 - k;
+  return RANGE_NEAR_MULT + (RANGE_FAR_MULT - RANGE_NEAR_MULT) * k;
+};
+
+const RESIST_MSG_CD = 5; // seconds between RESISTS / IMMUNE / BLOCKED popups on the same ant
+function damageAnt(ant, dmg, opts = {}) {
+  if (!ant.alive) return;
+  const { point = null, silent = false, kind = 'blaster' } = opts;
+  const mult = (ant.T.resist?.[kind] ?? 1) * (ant.T.queen && kind === 'blaster' ? queenBlasterMult(state.wave) : 1);
+  if (mult !== 1) {
+    dmg *= mult;
+    const now = state.time;
+    if (mult < 1 && now - (ant.resistMsgT ?? -99) >= RESIST_MSG_CD) {
+      ant.resistMsgT = now;
+      addFloater(antCenter(ant, new THREE.Vector3()).setY(0.9 * ant.scale + 0.2), mult === 0 ? 'IMMUNE' : 'RESISTS', '#b0b8c8', 13);
+    }
+    if (mult === 0) { if (!silent) sfx.block(); return; }
+  }
+  if (RANGED_KINDS.has(kind)) dmg *= rangeMult(Math.hypot(ant.root.position.x - player.pos.x, ant.root.position.z - player.pos.z), kind);
+  if (SHIELD_BLOCKS.has(kind) && ant.T.shield) {
+    const p = ant.root.position;
+    let tx = player.pos.x - p.x, tz = player.pos.z - p.z;
+    const tl = Math.hypot(tx, tz) || 1;
+    if ((Math.sin(ant.heading) * tx + Math.cos(ant.heading) * tz) / tl > 0.35) {
+      dmg *= 0.01;
+      if (!silent) {
+        sfx.block();
+        burst(point || antCenter(ant, new THREE.Vector3()), 3, 0.025, 2, [leafPartMat]);
+        if (state.time - (ant.resistMsgT ?? -99) >= RESIST_MSG_CD) {
+          ant.resistMsgT = state.time;
+          addFloater(antCenter(ant, new THREE.Vector3()).setY(0.9 * ant.scale), 'BLOCKED', '#9fe07a', 13);
+        }
+      }
+    }
+  }
+  if (kind === 'shock' && (ant.windT > 0 || ant.chargeT > 0)) stopCharge(ant, true);
+  ant.lastHit = state.time;
+  ant.hp -= dmg;
+  ant.hitFlash = Math.max(ant.hitFlash, silent ? 0.2 : 1);
+  if (ant.hp > 0) updateHpBar(ant);
+  hitMarker();
+  if (silent) ant.accum += dmg;
+  else addFloater(antCenter(ant, new THREE.Vector3()).setY(0.55 * ant.scale + 0.25), fmt(dmg), dmg >= 5 ? '#ff9a3a' : '#ffffff', dmg >= 5 ? 20 : 15);
+  if (point && !silent) burst(point, 3, 0.025, 2);
+  if (ant.hp <= 0) killAnt(ant);
+  else if (!silent) sfx.hit();
+}
+
+function setMuzzle(id) {
+  const m = VMS[id].muzzle;
+  if (muzzleLight.parent !== m) m.add(muzzleLight, flashMesh);
+}
+
+function fireGun(id) {
+  if (player.reloading > 0) return;
+  const G = id === 'blaster'
+    ? { dmg: bDmg(), delay: bDelay(), streams: bStreams(), spread: 0.014, pierce: lv('bPierce'), kind: 'blaster', tracer: tracerMats.blaster, recoil: 1, sound: 'shoot' }
+    : id === 'sniper'
+    ? { dmg: sDmg(), delay: sDelay(), streams: 1, spread: 0, pierce: 3 + lv('sMag'), kind: 'sniper', tracer: tracerMats.sniper, recoil: 3.5, sound: 'snipe' }
+    : { dmg: gDmg(), delay: 0.045, streams: 1, spread: 0.035, pierce: 0, kind: 'gatling', tracer: tracerMats.gatling, recoil: 0.35, sound: 'gat' };
+  if (player.ammo[id] <= 0) { sfx.empty(); startReload(); player.fireCd = 0.25; return; }
+  player.ammo[id]--;
+  player.fireCd = G.delay;
+  player.recoil = Math.min(3, player.recoil + G.recoil);
+  sfx[G.sound]();
+  setMuzzle(id);
+  muzzleLight.color.set(id === 'gatling' ? 0xff7ac0 : id === 'sniper' ? 0xffffff : 0x9aff5a);
+  muzzleLight.intensity = 3;
+  flashMesh.visible = true;
+
+  // ants on your screen get hit first
+  const cx = W / 2, cy = H / 2;
+  for (let i = screenAnts.length - 1; i >= 0; i--) {
+    const a = screenAnts[i];
+    if (Math.hypot(a.x - cx, a.y - cy) < a.size * 0.5) { killScreenAnt(i); hitMarker(); return; }
+  }
+
+  const mp = new THREE.Vector3(); VMS[id].muzzle.getWorldPosition(mp);
+  camera.getWorldPosition(_o);
+  const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+  const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+  const maxHits = 1 + G.pierce;
+
+  for (let k = 0; k < G.streams; k++) {
+    // stream 0 goes straight at the crosshair; extra streams fan out alternately left and right
+    const side = k === 0 ? 0 : (k % 2 ? -1 : 1) * Math.ceil(k / 2);
+    _d.copy(fwd).addScaledVector(right, side * 0.03);
+    const dmg = G.dmg * (id === 'blaster' ? STREAM_DMG[k] : 1);
+    _d.x += (Math.random() - 0.5) * G.spread;
+    _d.y += (Math.random() - 0.5) * G.spread;
+    _d.z += (Math.random() - 0.5) * G.spread;
+    _d.normalize();
+
+    const groundT = _d.y < 0 ? -_o.y / _d.y : Infinity;
+    const hits = [];
+    for (const ant of ants) {
+      if (!ant.alive) continue;
+      antCenter(ant, _c);
+      const r = 0.36 * ant.scale;
+      _tmp.subVectors(_c, _o);
+      const tca = _tmp.dot(_d);
+      if (tca < 0) continue;
+      const d2 = _tmp.lengthSq() - tca * tca;
+      if (d2 > r * r) continue;
+      const t = tca - Math.sqrt(r * r - d2);
+      if (t <= groundT) hits.push({ ant, t });
+    }
+    hits.sort((a, b) => a.t - b.t);
+    const struck = hits.slice(0, maxHits);
+    for (const h of struck) damageAnt(h.ant, dmg, { point: _o.clone().addScaledVector(_d, h.t), silent: k > 0 && id === 'blaster', kind: G.kind });
+    const endT = struck.length >= maxHits ? struck[struck.length - 1].t : Math.min(groundT, 120);
+    const end = _o.clone().addScaledVector(_d, endT);
+    if (!struck.length && groundT < 120) burst(end, 3, 0.03, 1.5, [dirtPartMat]);
+    addTracer(mp, end, G.tracer);
+  }
+}
+
+function sprayTick(dt) {
+  camera.getWorldPosition(_o);
+  camera.getWorldDirection(_d);
+  const range = sprayRange(), cosA = Math.cos(0.4), dps = sprayDps();
+  for (const ant of ants) {
+    if (!ant.alive) continue;
+    antCenter(ant, _c);
+    _tmp.subVectors(_c, _o);
+    const dist = _tmp.length();
+    if (dist > range + 0.35 * ant.scale) continue;
+    if (dist > 0.9 * ant.scale && _tmp.dot(_d) / dist < cosA) continue;
+    damageAnt(ant, dps * dt, { silent: true, kind: 'spray' });
+  }
+  const mp = new THREE.Vector3(); sprayMuzzle.getWorldPosition(mp);
+  player.sprayEmit += dt;
+  while (player.sprayEmit > 0.012) {
+    player.sprayEmit -= 0.012;
+    if (particles.length > 550) break;
+    const m = new THREE.Mesh(partGeo, mistMat);
+    m.scale.setScalar(0.025);
+    m.position.copy(mp).addScaledVector(_d, 0.25);
+    const v = _d.clone().multiplyScalar(range * 1.8);
+    v.x += (Math.random() - 0.5) * 2.4; v.y += (Math.random() - 0.5) * 2.4; v.z += (Math.random() - 0.5) * 2.4;
+    scene.add(m);
+    particles.push({ m, v, life: 0.55, grav: -0.6, grow: 4.2 });
+  }
+  player.sprayHiss -= dt;
+  if (player.sprayHiss <= 0) { sfx.spray(); player.sprayHiss = 0.09; }
+}
+
+const _up = new THREE.Vector3(0, 1, 0);
+function laserTick(dt) {
+  camera.getWorldPosition(_o);
+  camera.getWorldDirection(_d);
+  const groundT = _d.y < 0 ? -_o.y / _d.y : Infinity;
+  const maxT = Math.min(groundT, 60);
+  const hits = [];
+  for (const ant of ants) {
+    if (!ant.alive) continue;
+    antCenter(ant, _c);
+    const r = 0.38 * ant.scale;
+    _tmp.subVectors(_c, _o);
+    const tca = _tmp.dot(_d);
+    if (tca < 0) continue;
+    const d2 = _tmp.lengthSq() - tca * tca;
+    if (d2 > r * r) continue;
+    const t = tca - Math.sqrt(r * r - d2);
+    if (t < maxT) hits.push({ ant, t });
+  }
+  hits.sort((a, b) => a.t - b.t);
+  hits.length = Math.min(hits.length, LASER_TARGETS);
+  // the beam burns through up to LASER_TARGETS ants, then stops in the last one
+  const bestT = hits.length === LASER_TARGETS ? hits[hits.length - 1].t : maxT;
+  const end = _o.clone().addScaledVector(_d, bestT);
+  const heatK = laserHeatMult(player.heat);
+  for (const h of hits) damageAnt(h.ant, laserDps() * heatK * dt, { silent: true, kind: 'laser' });
+  beamMesh.material.color.setHSL(0.15 - Math.min(1, heatK / 4) * 0.13, 1, 0.6 + Math.min(1, heatK / 4) * 0.1);
+  const mp = new THREE.Vector3(); laserMuzzle.getWorldPosition(mp);
+  const dir = end.clone().sub(mp);
+  const len = dir.length();
+  beamMesh.visible = true;
+  beamMesh.position.copy(mp);
+  beamMesh.quaternion.setFromUnitVectors(_up, dir.normalize());
+  const w = (0.01 + heatK * 0.004) + Math.sin(state.time * 40) * 0.003;
+  beamMesh.scale.set(w, len, w);
+  beamGlow.visible = true;
+  beamGlow.position.copy(end);
+  beamGlow.scale.setScalar(0.6 + Math.random() * 0.3);
+  player.beamBurn -= dt;
+  if (player.beamBurn <= 0) {
+    player.beamBurn = 0.05;
+    burst(end, 1, 0.04, 0.6, [smokeMat], -1.5);
+    if (hits.length < LASER_TARGETS && groundT < 60 && Math.random() < 0.25) addFlatDecal(scorchMat, end.x, end.z, 0.12 + Math.random() * 0.08, SCORCH_LIFE);
+  }
+  player.beamHum -= dt;
+  if (player.beamHum <= 0) { sfx.beam(); player.beamHum = 0.1; }
+}
+
+// ---- Pinecone Launcher: lobbed grenades that burst on contact
+function firePinecone() {
+  if (player.reloading > 0) return;
+  if (player.ammo.pinecone <= 0) { sfx.empty(); startReload(); player.fireCd = 0.25; return; }
+  player.ammo.pinecone--;
+  player.fireCd = 0.75;
+  player.recoil = Math.min(3, player.recoil + 2.5);
+  sfx.thunk();
+  camera.getWorldDirection(_d);
+  const mp = new THREE.Vector3(); coneMuzzle.getWorldPosition(mp);
+  const m = new THREE.Mesh(shellGeo, shellMat);
+  m.castShadow = true;
+  m.position.copy(mp);
+  const v = _d.clone().multiplyScalar(26);
+  v.y += 3;
+  scene.add(m);
+  shells.push({ m, v, life: 4 });
+}
+
+// ---- Static Zapper: hitscan bolt that chains to nearby ants
+function fireZapper() {
+  if (player.reloading > 0) return;
+  if (player.ammo.zapper <= 0) { sfx.empty(); startReload(); player.fireCd = 0.25; return; }
+  player.ammo.zapper--;
+  player.fireCd = 0.42;
+  player.recoil = Math.min(3, player.recoil + 1.2);
+  sfx.zap();
+  setMuzzle('zapper');
+  muzzleLight.color.set(0x7ac8ff);
+  muzzleLight.intensity = 4;
+
+  const cx = W / 2, cy = H / 2;
+  for (let i = screenAnts.length - 1; i >= 0; i--) {
+    if (Math.hypot(screenAnts[i].x - cx, screenAnts[i].y - cy) < screenAnts[i].size * 0.5) { killScreenAnt(i); hitMarker(); return; }
+  }
+
+  camera.getWorldPosition(_o);
+  camera.getWorldDirection(_d);
+  const mp = new THREE.Vector3(); zapMuzzle.getWorldPosition(mp);
+  const groundT = _d.y < 0 ? -_o.y / _d.y : Infinity;
+  let first = null, bestT = Math.min(groundT, 32);
+  for (const ant of ants) {
+    if (!ant.alive) continue;
+    antCenter(ant, _c);
+    const r = 0.45 * ant.scale;
+    _tmp.subVectors(_c, _o);
+    const tca = _tmp.dot(_d);
+    if (tca < 0) continue;
+    const d2 = _tmp.lengthSq() - tca * tca;
+    if (d2 > r * r) continue;
+    const t = tca - Math.sqrt(Math.max(0, r * r - d2));
+    if (t < bestT) { bestT = t; first = ant; }
+  }
+  if (!first) { addBolt(mp, _o.clone().addScaledVector(_d, bestT)); return; }
+  const hit = new Set();
+  let from = mp, cur = first, dmg = zDmg();
+  for (let n = 0; n < zChain() && cur; n++) {
+    hit.add(cur);
+    const c = antCenter(cur, new THREE.Vector3());
+    addBolt(from, c);
+    cur.hitFlash = 1;
+    damageAnt(cur, dmg, { point: c, kind: 'shock' });
+    dmg *= 0.85;
+    from = c;
+    let next = null, nd = 5.5;
+    for (const a of ants) {
+      if (!a.alive || hit.has(a)) continue;
+      const d = a.root.position.distanceTo(cur.root.position);
+      if (d < nd) { nd = d; next = a; }
+    }
+    cur = next;
+  }
+}
+
+function startReload() {
+  const id = player.weapon;
+  if (!(id in MAG) || player.reloading > 0) return;
+  if (player.ammo[id] >= MAG[id]()) return;
+  player.reloadTotal = RELOAD[id]();
+  player.reloading = player.reloadTotal;
+  sfx.reload();
+}
+
+function finishReload() {
+  const id = player.weapon;
+  player.ammo[id] = MAG[id]();
+}
+
+function switchWeapon(id) {
+  if (id === player.weapon) return;
+  const w = WEAPONS.find(x => x.id === id);
+  if (!owned(id)) { showMessage('', `Unlock the ${w.name} in the shop`, 1.4); return; }
+  player.weapon = id;
+  player.reloading = 0;
+  player.spin = 0;
+  player.swapAnim = 0.25;
+  setClass(hud.crosshair, w.cross);
+  sfx.swap();
+}
+
+function cycleWeapon(dir) {
+  const list = WEAPONS.filter(w => owned(w.id));
+  const i = list.findIndex(w => w.id === player.weapon);
+  switchWeapon(list[(i + dir + list.length) % list.length].id);
+}
+
+function plantMine() {
+  if (!lv('mine')) { showMessage('', 'Unlock Land Mines in the shop (Gadgets)', 1.4); return; }
+  if (player.mineCd > 0) { sfx.empty(); return; }
+  if (player.mines <= 0) { sfx.empty(); showMessage('', 'Out of mines. Buy more in the shop', 1.2); return; }
+  player.mines--;
+  player.mineCd = mineCooldown();
+  const fx = Math.sin(player.yaw), fz = Math.cos(player.yaw);
+  const lim = ARENA - 0.5;
+  const x = Math.max(-lim, Math.min(lim, player.pos.x - fx * 0.9));
+  const z = Math.max(-lim, Math.min(lim, player.pos.z - fz * 0.9));
+  const m = new THREE.Group();
+  const body = new THREE.Mesh(mineGeo, mineMat);
+  body.position.y = 0.045;
+  body.castShadow = true;
+  const lamp = new THREE.Mesh(mineLightGeo, new THREE.MeshBasicMaterial({ color: 0xff2a1a }));
+  lamp.position.y = 0.11;
+  const ring = new THREE.Mesh(mineRingGeo, new THREE.MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0.35, depthWrite: false }));
+  ring.position.y = 0.03;
+  ring.scale.setScalar(mineRadius());
+  m.add(body, lamp, ring);
+  m.position.set(x, 0, z);
+  scene.add(m);
+  mines.push({ m, lamp, ring, fuse: MINE_FUSE, beepT: 0 });
+  sfx.trap();
+}
+
+function explosion(pos, { radius, antDmg, playerDmg = 0, color = 0xffa040, kind = 'blast' }) {
+  for (const ant of ants) {
+    if (!ant.alive) continue;
+    const d = Math.hypot(ant.root.position.x - pos.x, ant.root.position.z - pos.z);
+    if (d < radius + 0.3 * ant.scale) damageAnt(ant, antDmg, { silent: true, kind });
+  }
+  if (playerDmg) {
+    const pd = Math.hypot(player.pos.x - pos.x, player.pos.z - pos.z);
+    if (pd < radius) hurtPlayer(playerDmg * (1 - (pd / radius) * 0.5));
+  }
+  burst(pos.clone().setY(0.2), Math.round(radius * 6), 0.06, radius * 1.6, [dirtPartMat]);
+  burst(pos.clone().setY(0.3), Math.round(radius * 5), 0.05, radius * 1.4, fireMats);
+  addFlatDecal(scorchMat, pos.x, pos.z, radius * 0.45, SCORCH_LIFE);
+  blastLight.color.set(color);
+  blastLight.position.set(pos.x, 1.5, pos.z);
+  blastLight.intensity = 15 * radius;
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false });
+  const ball = new THREE.Mesh(blastGeo, mat);
+  ball.position.set(pos.x, 0.3, pos.z);
+  scene.add(ball);
+  blasts.push({ ball, life: 0.4, R: radius });
+  const pd = Math.hypot(player.pos.x - pos.x, player.pos.z - pos.z);
+  player.shake = Math.max(player.shake, Math.max(0.15, 1 - pd / 25) * Math.min(1, radius / 4));
+  sfx.boom();
+}
+
+function detonate(ant) {
+  if (!ant.alive) return;
+  removeAnt(ant);
+  explosion(ant.root.position.clone(), { radius: 3.5, antDmg: 5, playerDmg: antDmg(ant), color: 0xff7a1a });
+}
+
+// ---- Ant traps: sticky poison pads placed next to a nest
+const TRAP_NEST_RANGE = 6.5, MAX_TRAPS = 8;
+const TRAP_CHEW_RATE = 10; // seconds of trap life a carpenter ant eats per second
+const trapChipMat = new THREE.MeshBasicMaterial({ color: 0xffb42a });
+function placeTrap() {
+  if (!lv('trap')) { showMessage('', 'Unlock Ant Traps in the shop (Gadgets)', 1.4); return; }
+  if (player.trapCd > 0) return;
+  if (player.traps <= 0) { sfx.empty(); showMessage('', 'Out of traps. Buy more in the shop', 1.2); return; }
+  let near = null, nd = TRAP_NEST_RANGE;
+  for (const [hx, hz] of HILLS) {
+    const d = Math.hypot(player.pos.x - hx, player.pos.z - hz);
+    if (d < nd) { nd = d; near = [hx, hz]; }
+  }
+  if (!near) { sfx.empty(); showMessage('', 'Stand next to an ant nest to place a trap', 1.4); return; }
+  if (traps.length >= MAX_TRAPS) { const old = traps.shift(); scene.remove(old.g); }
+  const R = trapRadius();
+  const fx = Math.sin(player.yaw), fz = Math.cos(player.yaw);
+  const x = player.pos.x - fx * 1.2, z = player.pos.z - fz * 1.2;
+  const g = new THREE.Group();
+  const pad = new THREE.Mesh(trapPadGeo, trapPadMat.clone());
+  pad.rotation.x = -Math.PI / 2;
+  pad.scale.setScalar(R);
+  pad.position.y = 0.03;
+  pad.receiveShadow = true;
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.5), trapBoxMat);
+  box.position.y = 0.1;
+  box.castShadow = true;
+  g.add(pad, box);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  traps.push({ g, pad, x, z, R, dps: trapDps(), life: trapLife(), maxLife: trapLife() });
+  player.traps--;
+  player.trapCd = 0.6;
+  sfx.trap();
+}
+
+function updateTraps(dt) {
+  for (let i = traps.length - 1; i >= 0; i--) {
+    const tr = traps[i];
+    tr.life -= dt;
+    tr.pad.material.opacity = 0.85 * Math.min(1, tr.life / 4);
+    if (tr.life <= 0) { scene.remove(tr.g); traps.splice(i, 1); continue; }
+    for (const a of ants) {
+      if (!a.alive || a.T.flier) continue;
+      const d = Math.hypot(a.root.position.x - tr.x, a.root.position.z - tr.z);
+      if (d < tr.R + 0.2 * a.scale) {
+        damageAnt(a, tr.dps * dt, { silent: true, kind: 'trap' });
+        if (a.T.chewer) {
+          tr.life -= TRAP_CHEW_RATE * dt;
+          if (Math.random() < dt * 10) burst(new THREE.Vector3(tr.x, 0.15, tr.z), 1, 0.03, 1.5, [trapChipMat]);
+        } else a.slowed = 0.25;
+      }
+    }
+  }
+}
+
+// ---- Green Weaver silk webs: sticky patches that slow the player
+const WEB_R = 1.0, WEB_LIFE = 10, WEB_SLOW = 0.45, MAX_WEBS = 24;
+const webMat = new THREE.MeshBasicMaterial({
+  map: (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 2;
+    const cx = 128, cy = 128;
+    const spokes = 12;
+    for (let i = 0; i < spokes; i++) {
+      const a = i / spokes * Math.PI * 2;
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * 124, cy + Math.sin(a) * 124); g.stroke();
+    }
+    g.lineWidth = 1.5;
+    for (let r = 14; r < 124; r += 13) {
+      g.beginPath();
+      for (let i = 0; i <= spokes; i++) {
+        const a = i / spokes * Math.PI * 2;
+        const rr = r + Math.sin(i * 2.3 + r) * 3;
+        i ? g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr) : g.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+      }
+      g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })(),
+  transparent: true, depthWrite: false, opacity: 0.85, polygonOffset: true, polygonOffsetFactor: -3,
+});
+const webGeo = (() => { const g = new THREE.PlaneGeometry(2, 2); g.rotateX(-Math.PI / 2); return g; })();
+
+function spinWeb(x, z) {
+  if (webs.length >= MAX_WEBS) { const old = webs.shift(); scene.remove(old.m); old.m.material.dispose(); }
+  const m = new THREE.Mesh(webGeo, webMat.clone());
+  m.position.set(x, 0.025, z);
+  m.rotation.y = Math.random() * Math.PI * 2;
+  m.scale.setScalar(WEB_R);
+  scene.add(m);
+  webs.push({ m, x, z, life: WEB_LIFE });
+}
+
+function updateWebs(dt) {
+  let inWeb = false;
+  for (let i = webs.length - 1; i >= 0; i--) {
+    const w = webs[i];
+    w.life -= dt;
+    w.m.material.opacity = 0.85 * Math.min(1, w.life / 1.5);
+    if (w.life <= 0) { scene.remove(w.m); w.m.material.dispose(); webs.splice(i, 1); continue; }
+    if (player.pos.y < 0.3 && Math.hypot(player.pos.x - w.x, player.pos.z - w.z) < WEB_R) inWeb = true;
+  }
+  if (inWeb) {
+    if (player.webbed <= 0) { sfx.glue(); addFloater(new THREE.Vector3(player.pos.x, 1.2, player.pos.z).addScaledVector(_camFwd, 2), 'STUCK IN SILK', '#e8ffe0', 16); }
+    player.webbed = 0.2;
+  }
+}
+
+function melee() {
+  if (player.meleeCd > 0) return;
+  player.meleeCd = SHOE_CD;
+  player.meleeAnim = 0.4;
+  player.meleePending = 0.12;
+  sfx.swing();
+}
+
+function applyMelee() {
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+  const range = shoeRange(), dmg = shoeDmg();
+  let hit = false;
+  for (const ant of ants) {
+    const dx = ant.root.position.x - player.pos.x, dz = ant.root.position.z - player.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > range + 0.35 * ant.scale) continue;
+    if (d > 0.3 && (dx * fx + dz * fz) / d < 0.35) continue;
+    damageAnt(ant, dmg, { kind: 'melee' });
+    hit = true;
+  }
+  if (hit) { sfx.smack(); player.shake = Math.max(player.shake, 0.25); }
+}
+
+function stomp(impact) {
+  player.stompGrace = player.airSafe ? STOMP_GRACE : 0;
+  const radius = 1.2 + Math.min(impact, 14) * 0.07 + stompBonus();
+  let n = 0;
+  for (const ant of ants) {
+    const d = Math.hypot(ant.root.position.x - player.pos.x, ant.root.position.z - player.pos.z);
+    if (d < radius + 0.3 * ant.scale) { damageAnt(ant, ant.T.queen || ant.T.hp[0] >= 20 ? 4 : 99, { kind: 'stomp', silent: true }); n++; }
+  }
+  sfx.stomp();
+  player.shake = Math.max(player.shake, 0.35);
+  burst(new THREE.Vector3(player.pos.x, 0.05, player.pos.z), 10 + lv('boots') * 6, 0.04, 2.5 + lv('boots'), [dirtPartMat]);
+  if (n >= 3) showMessage('', `STOMP x${n}!`, 1);
+}
+
+function slap() {
+  if (player.slapCd > 0) return;
+  player.slapCd = 0.7;
+  sfx.slap();
+  player.shake = Math.max(player.shake, 0.2);
+  let n = 0;
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.42;
+  for (let i = screenAnts.length - 1; i >= 0; i--) {
+    if (Math.hypot(screenAnts[i].x - cx, screenAnts[i].y - cy) < R) { killScreenAnt(i, true); n++; }
+  }
+  hurtPlayer(n > 0 ? 3 : 1);
+}
+
+function spit(ant) {
+  const from = antCenter(ant, new THREE.Vector3());
+  from.y += 0.15 * ant.scale;
+  const target = new THREE.Vector3(player.pos.x + player.vel.x * 0.35, player.pos.y + 1.2, player.pos.z + player.vel.z * 0.35);
+  const g = 9;
+  const flight = Math.max(0.5, from.distanceTo(target) / 9);
+  const v = target.clone().sub(from).divideScalar(flight);
+  v.y += 0.5 * g * flight;
+  const m = new THREE.Mesh(spitGeo, spitMat);
+  m.position.copy(from);
+  scene.add(m);
+  spits.push({ m, v, dmg: antDmg(ant), life: 4 });
+  sfx.spit();
+}
+
+function hurtPlayer(dmg) {
+  player.hp -= dmg;
+  player.damageFlash = Math.min(1, player.damageFlash + dmg / 15);
+  if (player.hp <= 0 && state.mode === 'playing') gameOver();
+}
+
+function startBleed() {
+  if (player.bleed <= 0) {
+    player.bleedTick = 1;
+    addFloater(new THREE.Vector3(player.pos.x, 1.2, player.pos.z).addScaledVector(_camFwd, 2), 'BLEEDING', '#ff4a4a', 16);
+  }
+  player.bleed = BLEED_TIME;
+}
+
+function updateBleed(dt) {
+  if (player.bleed <= 0) return;
+  player.bleed -= dt;
+  player.bleedTick -= dt;
+  if (player.bleedTick <= 0) {
+    player.bleedTick += 1;
+    hurtPlayer(BLEED_DMG);
+    addFloater(new THREE.Vector3(player.pos.x, 1.0, player.pos.z).addScaledVector(_camFwd, 2), `-${BLEED_DMG}`, '#ff4a4a', 14);
+  }
+}
+
+// ============================================================
+// SHOP
+// ============================================================
+let shopTab = 'Weapons';
+
+function upgradeState(u) {
+  const l = lv(u.id);
+  const locked = u.req && !lv(u.req);
+  const maxed = l >= u.max;
+  const cost = maxed ? 0 : u.cost(l);
+  const waveLock = !maxed && u.waveReq && state.wave + 1 < u.waveReq[l] ? u.waveReq[l] : 0;
+  const full = u.id === 'heal' && player.hp >= maxHp();
+  const disabled = locked || maxed || waveLock || full || state.sugar < cost;
+  let label;
+  if (locked) label = `Requires ${UPGRADES.find(x => x.id === u.req).name.replace('Unlock ', '')}`;
+  else if (maxed) label = u.max === 1 ? 'OWNED' : 'MAXED';
+  else if (waveLock) label = `Unlocks at wave ${waveLock}`;
+  else if (full) label = 'Already full';
+  else label = `Buy · ${cost} sugar`;
+  return { l, locked, maxed, cost, disabled, label };
+}
+
+function renderShop() {
+  hud.shopSugar.textContent = state.sugar;
+  hud.shopSub.textContent = `Wave ${state.wave} cleared · ${state.kills} ants squished`;
+  const next = state.wave + 1;
+  const fresh = newSpeciesFor(next);
+  const queens = QUEEN_WAVES[next] || 0;
+  hud.shopIntel.innerHTML = `
+    <h3>Next up</h3>
+    <div class="big">Wave ${next} <span style="opacity:.5;font-size:16px">/ ${MAX_WAVES}</span></div>
+    <div>About ${waveCount(next) + queens} ants</div>
+    ${queens ? `<div class="warn">${queens > 1 ? queens + ' QUEENS' : 'THE QUEEN'} arrive${queens > 1 ? '' : 's'}!${queenTier(next) ? ` (level ${queenTier(next) + 1}, ${Math.round((queenBoost(next).hp - 1) * 100)}% more health)` : ''}</div>` : ''}
+    ${isFinal(next) ? `<div class="warn" style="color:#ff4a3a">FINAL WAVE: extra titans, bombers and nurses. Ants are faster and much tougher. Stock up!</div>` : ''}
+    ${next > 10 ? `<div class="warn" style="color:#ffcf6a">Ants are ${Math.round((lateHpMult(next) - 1) * 100)}% tougher</div>` : ''}
+    ${fresh.length ? `<h3>New species</h3>${fresh.map(([, T]) => `<div class="sp"><span class="sw" style="background:#${T.color.toString(16).padStart(6, '0')}"></span><div><b>${T.name}</b><div style="opacity:.75;font-size:12px">${T.intro}</div>${resistLines(T).map(r => `<div style="font-size:11px;color:#ffcf6a">${r}</div>`).join('')}</div></div>`).join('')}` : ''}
+    ${goldenWave(next) ? `<div style="color:#ffd84a">A Golden Ant appears: +${goldenSugar(next)} sugar if caught</div>` : ''}
+    <h3>Your status</h3>
+    <div class="stat"><span>Health</span><b>${Math.ceil(player.hp)} / ${maxHp()}</b></div>
+    <div class="stat"><span>Land mines</span><b>${lv('mine') ? player.mines : 'locked'}</b></div>
+    <div class="stat"><span>Traps</span><b>${lv('trap') ? player.traps : 'locked'}</b></div>
+    <div class="stat"><span>Weapons</span><b>${WEAPONS.filter(w => owned(w.id)).length} / ${WEAPONS.length}</b></div>
+    <div class="stat"><span>Score</span><b>${state.score.toLocaleString()}</b></div>`;
+  hud.shopTabs.innerHTML = TABS.map(t => `<button data-tab="${t}" class="${t === shopTab ? 'on' : ''}">${t}</button>`).join('');
+  const list = UPGRADES.filter(u => u.tab === shopTab);
+  const groups = [...new Set(list.map(u => u.group))];
+  hud.shopGrid.innerHTML = groups.map(g => {
+    const items = list.filter(u => u.group === g);
+    const unlock = items.find(u => u.max === 1 && (u.unlock || u.id === 'mine' || u.id === 'trap'));
+    const chip = unlock ? (lv(unlock.id) ? '<span class="chip own">OWNED</span>' : '<span class="chip">LOCKED</span>') : '';
+    const cards = items.map(u => {
+      const s = upgradeState(u);
+      const finite = Number.isFinite(u.max) && u.max > 1;
+      const lvText = finite ? `Lv ${s.l} / ${u.max}` : '';
+      const desc = s.maxed ? (finite ? 'Fully upgraded!' : u.desc(0)) : u.desc(s.l);
+      return `<div class="card ${s.maxed ? 'maxed' : ''}">
+        <div class="top"><span class="nm">${u.name}</span><span class="lv">${lvText}</span></div>
+        ${finite ? `<div class="lvbar"><i style="width:${(s.l / u.max) * 100}%"></i></div>` : ''}
+        <div class="ds">${desc}</div>
+        <button data-id="${u.id}" ${s.disabled ? 'disabled' : ''}>${s.label}</button>
+      </div>`;
+    }).join('');
+    return `<div class="sec"><h3>${g} ${chip}</h3><div class="cards">${cards}</div></div>`;
+  }).join('');
+}
+
+// ============================================================
+// ANT LIBRARY (discoveries persist between runs)
+// ============================================================
+const LIB_KEY = 'antAnnihilator.discovered';
+const discovered = new Set((() => { try { return JSON.parse(localStorage.getItem(LIB_KEY)) || []; } catch { return []; } })());
+let libUnseen = 0;
+function discover(type) {
+  if (discovered.has(type)) return;
+  discovered.add(type);
+  libUnseen++;
+  try { localStorage.setItem(LIB_KEY, JSON.stringify([...discovered])); } catch {}
+  updateLibButtons();
+}
+function updateLibButtons() {
+  for (const b of document.querySelectorAll('[data-lib]'))
+    b.innerHTML = 'ANT LIBRARY' + (libUnseen ? `<span class="new">${libUnseen} NEW</span>` : '');
+}
+
+function antAbilities(T) {
+  const a = [];
+  if (T.queen) a.push('Spawns ants around her', 'Heals herself, much faster when you stop hitting her', 'Gets stronger every queen wave after wave 10', 'When the last queen dies the colony becomes ENRAGED', 'Bug Blaster does 100% on waves 5-10, 66% on waves 15-20 and 33% on waves 25-30');
+  if (T.flee) a.push('Runs away from you and escapes after 16s', `Huge sugar reward that grows each wave (+${goldenSugar(3)} on wave 3). Only shows up every ${GOLDEN_EVERY} waves until wave ${GOLDEN_LAST_WAVE}`);
+  if (T.swarm) a.push(`Comes in swarms of ${T.swarm}`);
+  if (T.webs) a.push(`Spins silk webs on the ground every few seconds. Walking through one slows you to ${Math.round(WEB_SLOW * 100)}% speed (jump over them!). Webs last ${WEB_LIFE}s`);
+  else if (T.wander) a.push('Zig-zags unpredictably');
+  if (T.jumper) a.push('Leaps at you from up to 12m away');
+  if (T.charger) a.push(`Glows red for ${CHARGE_WINDUP}s, then charges in a straight line at ${CHARGE_SPEED}x speed. Sidestep it! A hit knocks you back. Static Zapper sparks stop the charge`);
+  if (T.bleeds) a.push(`Its sting makes you bleed: -${BLEED_DMG} HP every second for ${BLEED_TIME}s`);
+  if (T.dodger) a.push('Side-steps when you aim at it');
+  if (T.ranged) a.push('Stops at 9m and spits acid');
+  if (T.shield) a.push('Leaf blocks 99% of Blaster and Gatling shots from the front');
+  if (T.healer) a.push('Heals nearby ants 30% every 2.5s');
+  if (T.exploder) a.push('Explodes when it dies or touches you (3.5m blast)');
+  if (T.termite) a.push('Eats your land mines before they go off');
+  if (T.chewer) a.push(`Chews through ant traps (eats ${TRAP_CHEW_RATE}s of trap time per second) and isn't slowed by them`);
+  if (T.splits) a.push(`Splits into 2 smaller, faster ants when killed (up to ${T.splits} times, so 1 can become 7)`);
+  if (T.glue) a.push('Its bite gums up the gun you are holding for 2.5s');
+  if (T.flier) a.push('Flies: stomps and traps can\'t touch it');
+  if (T.termite) a.push('Termite');
+  if (!a.length) a.push('No special tricks');
+  return a;
+}
+
+function openLibrary() {
+  libUnseen = 0;
+  updateLibButtons();
+  const entries = Object.entries(ANT_TYPES).sort((x, y) => (x[1].minWave - y[1].minWave));
+  const sub = document.getElementById('lib-sub');
+  sub.innerHTML = `Discovered <b>${discovered.size}</b> / ${entries.length} species`;
+  document.getElementById('lib-grid').innerHTML = entries.map(([k, T]) => {
+    const when = T.queen ? `Waves ${Object.keys(QUEEN_WAVES).join(', ')}` : T.flee ? `Every ${GOLDEN_EVERY} waves` : `From wave ${T.minWave}`;
+    if (!discovered.has(k)) {
+      return `<div class="ant-card unknown"><div class="hd"><span class="dot" style="background:#222"></span><div><div class="nm">???</div><div class="wv">${when}</div></div></div><div class="intro">Not discovered yet.</div></div>`;
+    }
+    const col = '#' + (T.abdColor ?? T.color).toString(16).padStart(6, '0');
+    const head = '#' + T.color.toString(16).padStart(6, '0');
+    const range = ([a, b], d = 0) => a === b ? a.toFixed(d) : `${a.toFixed(d)}–${b.toFixed(d)}`;
+    const bite = T.dmg ? Math.round(T.dmg * ANT_DAMAGE_MULT * 10) / 10 : 0;
+    return `<div class="ant-card">
+      <div class="hd"><span class="dot" style="background:radial-gradient(circle at 35% 35%, ${head}, ${col})"></span><div><div class="nm">${T.name}</div><div class="wv">${when}</div></div></div>
+      ${T.intro ? `<div class="intro">${T.intro}</div>` : ''}
+      <div class="grid">
+        <div><span>Health</span><b>${range(T.hp)}</b></div>
+        <div><span>Speed</span><b>${range(T.speed, 1)}</b></div>
+        <div><span>${T.ranged ? 'Spit' : T.exploder ? 'Blast' : 'Bite'}</span><b>${bite}</b></div>
+        <div><span>Size</span><b>${range(T.scale, 1)}</b></div>
+        <div><span>Sugar</span><b>${T.flee ? 'scales' : T.sugar}</b></div>
+        <div><span>Score</span><b>${T.score}</b></div>
+      </div>
+      ${antAbilities(T).map(s => `<div class="ab">• ${s}</div>`).join('')}
+      ${resistLines(T).map(s => `<div class="rs">• ${s}</div>`).join('')}
+    </div>`;
+  }).join('');
+  document.getElementById('library').style.display = 'flex';
+}
+
+for (const b of document.querySelectorAll('[data-lib]')) b.addEventListener('click', e => { e.stopPropagation(); openLibrary(); });
+document.getElementById('lib-close').addEventListener('click', e => { e.stopPropagation(); document.getElementById('library').style.display = 'none'; });
+updateLibButtons();
+
+function buy(id) {
+  const u = UPGRADES.find(x => x.id === id);
+  if (!u) return;
+  const s = upgradeState(u);
+  if (s.disabled) return;
+  state.sugar -= s.cost;
+  up[id] = lv(id) + 1;
+  sfx.buy();
+  if (id === 'mine') player.mines += 3;
+  if (id === 'minePack') player.mines += 3;
+  if (id === 'heal') player.hp = maxHp();
+  if (id === 'hp') player.hp += 20;
+  if (id === 'stamina') player.stamina = maxStamina();
+  if (id === 'trap') player.traps += 2;
+  if (id === 'trapPack') player.traps += 2;
+  player.ammo = fullAmmo();
+  renderShop();
+}
+
+hud.shopGrid.addEventListener('click', e => {
+  const b = e.target.closest('button[data-id]');
+  if (b && !b.disabled) buy(b.dataset.id);
+});
+hud.shopTabs.addEventListener('click', e => {
+  const b = e.target.closest('button[data-tab]');
+  if (b) { shopTab = b.dataset.tab; renderShop(); }
+});
+
+function leaveShop() {
+  state.pendingWave = true;
+  glCanvas.requestPointerLock();
+}
+hud.shopGo.addEventListener('click', leaveShop);
+
+function openShop() {
+  state.mode = 'shop';
+  mouseDown = false;
+  player.ammo = fullAmmo();
+  player.jam = null; player.jamT = 0;
+  player.stamina = maxStamina(); player.tired = false;
+  player.bleed = 0;
+  player.reloading = 0;
+  player.fuel = 100; player.sprayLock = false;
+  player.heat = 0; player.heatLock = false;
+  beamMesh.visible = beamGlow.visible = false;
+  document.exitPointerLock();
+  hud.shopGo.textContent = `START WAVE ${state.wave + 1}`;
+  renderShop();
+  hud.shop.style.display = 'flex';
+}
+
+// ============================================================
+// GAME FLOW
+// ============================================================
+function clearWorld() {
+  for (const a of ants) removeAnt(a);
+  for (const d of decals) scene.remove(d);
+  for (const p of particles) scene.remove(p.m);
+  for (const t of tracers) { scene.remove(t.line); t.line.geometry.dispose(); }
+  for (const b of mines) scene.remove(b.m);
+  for (const s of spits) scene.remove(s.m);
+  for (const b of blasts) { scene.remove(b.ball); b.ball.material.dispose(); }
+  for (const r of rings) { scene.remove(r.m); r.m.material.dispose(); }
+  for (const s of shells) scene.remove(s.m);
+  for (const b of bolts) disposeBolt(b);
+  for (const t of traps) scene.remove(t.g);
+  for (const w of webs) { scene.remove(w.m); w.m.material.dispose(); }
+  ants = []; screenAnts = []; screenSplats = [];
+  for (const arr of [decals, particles, tracers, mines, spits, blasts, rings, floaters, shells, bolts, traps, webs]) arr.length = 0;
+  blastLight.intensity = 0;
+  beamMesh.visible = beamGlow.visible = false;
+}
+
+function resetGame() {
+  clearWorld();
+  for (const k of Object.keys(up)) delete up[k];
+  Object.assign(state, {
+    wave: 0, score: 0, kills: 0, sugar: 0, toSpawn: [], spawnTimer: 0, waveBreak: 0, combo: 0, comboTimer: 0,
+    goldenTimer: -1, pendingWave: false, hillOrder: [], hillIdx: 0, enraged: false, maxAlive: 20,
+  });
+  state.seen.clear();
+  Object.assign(player, {
+    hp: maxHp(), weapon: 'blaster', ammo: fullAmmo(), reloading: 0, fireCd: 0, spin: 0,
+    fuel: 100, sprayLock: false, heat: 0, heatLock: false, mines: 0, mineCd: 0, traps: 0, trapCd: 0, jam: null, jamT: 0, webbed: 0, stompGrace: 0, airSafe: false, jumpCd: 0, bleed: 0, bleedTick: 0, stamina: 100, staminaWait: 0, tired: false,
+    meleeCd: 0, meleeAnim: 0, meleePending: -1, slapCd: 0, shake: 0, recoil: 0, damageFlash: 0, swapAnim: 0,
+    yaw: 0, pitch: 0, onGround: true,
+  });
+  setClass(hud.crosshair, '');
+  player.pos.set(0, 0, 5); player.vel.set(0, 0, 0);
+  startWave();
+}
+
+function gameOver() {
+  state.mode = 'over';
+  sfx.lose();
+  document.exitPointerLock();
+  beamMesh.visible = beamGlow.visible = false;
+  hud.menuSub.textContent = 'The ants overwhelmed you...';
+  hud.menuStats.innerHTML = `Wave ${state.wave} &nbsp;·&nbsp; ${state.kills} ants squished &nbsp;·&nbsp; Score ${state.score.toLocaleString()}`;
+  hud.menuCta.textContent = 'TRY AGAIN';
+  hud.menu.style.display = 'flex';
+}
+
+function victory() {
+  state.mode = 'won';
+  sfx.wave();
+  document.exitPointerLock();
+  hud.menuSub.textContent = 'You wiped out the entire colony!';
+  hud.menuStats.innerHTML = `${state.kills} ants squished &nbsp;·&nbsp; Final score ${(state.score + Math.round(player.hp) * 50).toLocaleString()}`;
+  hud.menuCta.textContent = 'PLAY AGAIN';
+  hud.menu.style.display = 'flex';
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+hud.menu.addEventListener('click', () => {
+  initAudio();
+  document.body.classList.remove('title');
+  if (state.mode === 'menu' || state.mode === 'over' || state.mode === 'won') resetGame();
+  glCanvas.requestPointerLock();
+});
+
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === glCanvas) {
+    hud.menu.style.display = 'none';
+    hud.shop.style.display = 'none';
+    if (state.pendingWave) { state.pendingWave = false; startWave(); }
+    state.mode = 'playing';
+  } else if (state.mode === 'playing') {
+    state.mode = 'paused';
+    mouseDown = false;
+    beamMesh.visible = beamGlow.visible = false;
+    hud.menuSub.textContent = 'Paused';
+    hud.menuStats.innerHTML = `Wave ${state.wave} &nbsp;·&nbsp; Score ${state.score.toLocaleString()} &nbsp;·&nbsp; Sugar ${state.sugar}`;
+    hud.menuCta.textContent = 'RESUME';
+    hud.menu.style.display = 'flex';
+  }
+});
+
+document.addEventListener('mousemove', e => {
+  if (state.mode !== 'playing') return;
+  player.yaw -= e.movementX * 0.0022;
+  player.pitch -= e.movementY * 0.0022;
+  player.pitch = Math.max(-1.5, Math.min(1.5, player.pitch));
+});
+document.addEventListener('mousedown', e => {
+  if (state.mode !== 'playing') return;
+  if (e.button === 0) mouseDown = true;
+  if (e.button === 2) melee();
+});
+document.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('wheel', e => {
+  if (state.mode !== 'playing') return;
+  cycleWeapon(e.deltaY > 0 ? 1 : -1);
+});
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (state.mode === 'shop' && e.code === 'Enter') { leaveShop(); return; }
+  if (state.mode !== 'playing') return;
+  if (e.code === 'KeyR') startReload();
+  if (e.code === 'KeyF') slap();
+  if (e.code === 'KeyV') melee();
+  if (e.code === 'KeyG') plantMine();
+  if (e.code === 'KeyT') placeTrap();
+  const slot = WEAPONS.find(w => e.code === `Digit${w.slot}`);
+  if (slot) switchWeapon(slot.id);
+  if (e.code === 'Space') e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.resolution.set(innerWidth / 2, innerHeight / 2);
+  resizeOverlay();
+});
+
+// ============================================================
+// UPDATE
+// ============================================================
+function wrapAngle(a) { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; }
+
+function updatePlayer(dt) {
+  let mx = 0, mz = 0;
+  if (keys.KeyW || keys.ArrowUp) mz -= 1;
+  if (keys.KeyS || keys.ArrowDown) mz += 1;
+  if (keys.KeyA || keys.ArrowLeft) mx -= 1;
+  if (keys.KeyD || keys.ArrowRight) mx += 1;
+  const len = Math.hypot(mx, mz);
+  if (len) { mx /= len; mz /= len; }
+  const sprinting = (keys.ShiftLeft || keys.ShiftRight) && len > 0 && !player.tired && player.stamina > 0;
+  if (sprinting) {
+    player.stamina = Math.max(0, player.stamina - STAMINA_DRAIN * dt);
+    player.staminaWait = STAMINA_REGEN_DELAY;
+    if (player.stamina <= 0) player.tired = true;
+  } else {
+    player.staminaWait -= dt;
+    if (player.staminaWait <= 0) player.stamina = Math.min(maxStamina(), player.stamina + staminaRegen() * dt);
+    if (player.tired && player.stamina >= maxStamina() * STAMINA_RECOVER) player.tired = false;
+  }
+  const sp = moveSpeed() * (sprinting ? SPRINT_MULT : 1) * (player.webbed > 0 ? WEB_SLOW : 1);
+  const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
+  const wx = (cy * mx + sy * mz) * sp;
+  const wz = (-sy * mx + cy * mz) * sp;
+  const hSpeed = Math.hypot(player.vel.x, player.vel.z);
+  const accel = player.onGround ? 12 : hSpeed < sp ? 8 : 3;
+  const k = 1 - Math.exp(-accel * dt);
+  // in the air you keep your momentum (you can steer, but not slow down by letting go)
+  const airK = !player.onGround && len > 0 && hSpeed > sp ? hSpeed / sp : 1;
+  player.vel.x += (wx * airK - player.vel.x) * k;
+  player.vel.z += (wz * airK - player.vel.z) * k;
+
+  player.jumpCd -= dt;
+  if (keys.Space && player.onGround && player.jumpCd <= 0) {
+    const rested = player.stamina >= JUMP_STAMINA && !player.tired;
+    if (rested) {
+      player.stamina -= JUMP_STAMINA;
+      player.staminaWait = STAMINA_REGEN_DELAY;
+    }
+    player.vel.y = (7.5 + lv('boots') * 0.6) * (rested ? 1 : 0.75);
+    player.onGround = false;
+    player.airSafe = rested;
+    // sprint-jumping gives a burst of forward speed: the fastest way to get around
+    if (rested && sprinting) {
+      const boosted = Math.min(hSpeed * SPRINT_JUMP_BOOST, sp * SPRINT_JUMP_CAP);
+      if (hSpeed > 0.1 && boosted > hSpeed) { player.vel.x *= boosted / hSpeed; player.vel.z *= boosted / hSpeed; }
+    }
+  }
+  player.vel.y -= 22 * dt;
+  player.pos.addScaledVector(player.vel, dt);
+  if (player.pos.y <= 0) {
+    if (!player.onGround) {
+      const impact = -player.vel.y;
+      if (impact > 5) stomp(impact);
+      player.jumpCd = JUMP_CD;
+    }
+    player.pos.y = 0; player.vel.y = 0; player.onGround = true;
+  }
+  const lim = ARENA - 0.6;
+  player.pos.x = Math.max(-lim, Math.min(lim, player.pos.x));
+  player.pos.z = Math.max(-lim, Math.min(lim, player.pos.z));
+  collidePlayer();
+  if (regenRate() > 0) player.hp = Math.min(maxHp(), player.hp + regenRate() * dt);
+
+  const hs = Math.hypot(player.vel.x, player.vel.z);
+  if (player.onGround) player.bobT += hs * dt * 1.4;
+
+  player.shake = Math.max(0, player.shake - dt * 1.5);
+  const sh = player.shake * player.shake * 0.25;
+  camera.position.set(
+    player.pos.x + (Math.random() - 0.5) * sh,
+    player.pos.y + 1.7 + (player.onGround ? Math.sin(player.bobT * 2) * 0.045 * Math.min(1, hs / 6) : 0) + (Math.random() - 0.5) * sh,
+    player.pos.z + (Math.random() - 0.5) * sh
+  );
+  camera.rotation.set(player.pitch + player.recoil * 0.025, player.yaw, 0);
+
+  // timers
+  player.fireCd -= dt;
+  player.meleeCd -= dt;
+  player.slapCd -= dt;
+  player.mineCd -= dt;
+  player.trapCd -= dt;
+  player.webbed -= dt;
+  player.stompGrace -= dt;
+  updateBleed(dt);
+  if (player.jamT > 0) { player.jamT -= dt; if (player.jamT <= 0) player.jam = null; }
+  player.swapAnim = Math.max(0, player.swapAnim - dt);
+  if (player.reloading > 0) {
+    player.reloading -= dt;
+    if (player.reloading <= 0) { player.reloading = 0; finishReload(); }
+  } else if (player.weapon in MAG && player.ammo[player.weapon] <= 0) startReload();
+
+  // weapons
+  const w = player.weapon;
+  const jammed = player.jam === w;
+  if (jammed && mouseDown && player.fireCd <= 0) { sfx.empty(); player.fireCd = 0.35; }
+  const canFire = player.meleeAnim <= 0 && player.swapAnim <= 0 && !jammed;
+  let spraying = false, beaming = false;
+  if (w === 'blaster' || w === 'sniper') {
+    if (mouseDown && player.fireCd <= 0 && canFire) fireGun(w);
+  } else if (w === 'pinecone') {
+    if (mouseDown && player.fireCd <= 0 && canFire) firePinecone();
+  } else if (w === 'zapper') {
+    if (mouseDown && player.fireCd <= 0 && canFire) fireZapper();
+  } else if (w === 'gatling') {
+    const wantSpin = mouseDown && canFire && player.reloading <= 0;
+    player.spin = wantSpin ? Math.min(1, player.spin + dt / gSpin()) : Math.max(0, player.spin - dt * 1.5);
+    if (wantSpin && player.spin >= 1 && player.fireCd <= 0) fireGun('gatling');
+  } else if (w === 'spray') {
+    if (mouseDown && canFire && !player.sprayLock && player.fuel > 0) {
+      spraying = true;
+      player.fuel -= sprayDrain() * dt;
+      if (player.fuel <= 0) { player.fuel = 0; player.sprayLock = true; }
+      sprayTick(dt);
+    }
+  } else if (w === 'laser') {
+    if (mouseDown && canFire && !player.heatLock) {
+      beaming = true;
+      player.heat += laserHeat() * dt;
+      if (player.heat >= 100) { player.heat = 100; player.heatLock = true; }
+      laserTick(dt);
+    }
+  }
+  if (!spraying) {
+    player.fuel = Math.min(100, player.fuel + 18 * dt);
+    if (player.sprayLock && player.fuel >= 35) player.sprayLock = false;
+  }
+  if (!beaming) {
+    player.heat = Math.max(0, player.heat - 35 * dt);
+    if (player.heatLock && player.heat <= 30) player.heatLock = false;
+    beamMesh.visible = beamGlow.visible = false;
+  }
+  if (player.meleePending > 0) {
+    player.meleePending -= dt;
+    if (player.meleePending <= 0) { player.meleePending = -1; applyMelee(); }
+  }
+
+  // viewmodel animation
+  player.recoil = Math.max(0, player.recoil - dt * (w === 'sniper' ? 6 : 10));
+  muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 40);
+  if (muzzleLight.intensity < 1.5) flashMesh.visible = false;
+  const bobX = Math.cos(player.bobT) * 0.012 * Math.min(1, hs / 6);
+  const bobY = Math.abs(Math.sin(player.bobT)) * 0.014 * Math.min(1, hs / 6);
+  const swapDip = Math.sin((player.swapAnim / 0.25) * Math.PI) * 0.25;
+  const reloadDip = player.reloading > 0 ? Math.sin((1 - player.reloading / player.reloadTotal) * Math.PI) : 0;
+  const jitter = spraying || beaming || (w === 'gatling' && player.spin >= 1 && mouseDown) ? (Math.random() - 0.5) * 0.006 : 0;
+  const meleeDip = player.meleeAnim > 0 ? 0.25 * Math.sin((1 - Math.max(0, player.meleeAnim) / 0.4) * Math.PI) : 0;
+  for (const [id, vm] of Object.entries(VMS)) {
+    vm.obj.visible = id === w;
+    if (id !== w) continue;
+    vm.obj.position.set(
+      vm.pos.x + bobX + jitter,
+      vm.pos.y + bobY - reloadDip * 0.18 - swapDip - meleeDip + jitter,
+      vm.pos.z + Math.min(player.recoil, 1.5) * 0.05
+    );
+    if (id !== 'spray') vm.obj.rotation.set(Math.min(player.recoil, 1.5) * 0.08 + reloadDip * 0.6, 0, reloadDip * 0.4);
+  }
+  gatBarrels.rotation.z += player.spin * dt * 30;
+  if (w === 'zapper') {
+    const p = 1 + Math.sin(state.time * 12) * 0.15 + (player.fireCd > 0.2 ? 0.4 : 0);
+    for (const c of zapCoils) c.scale.setScalar(p);
+  }
+
+  if (player.meleeAnim > 0) {
+    player.meleeAnim -= dt;
+    const t = 1 - Math.max(0, player.meleeAnim) / 0.4;
+    const swing = Math.sin(Math.min(1, t * 1.6) * Math.PI * 0.5);
+    shoe.visible = true;
+    shoe.position.set(0.35 - swing * 0.4, 0.15 - swing * 0.45, -0.55 - swing * 0.15);
+    shoe.rotation.set(-0.3 - swing * 1.3, 0.3, 0.6 - swing * 0.6);
+  } else shoe.visible = false;
+}
+
+const _camFwd = new THREE.Vector3(), _camPos = new THREE.Vector3();
+function updateAnts(dt) {
+  const t = state.time;
+  const px = player.pos.x, pz = player.pos.z;
+  // the blanket is a wall, except when the player is standing on it (otherwise it would be a safe zone)
+  const blanketOpen = onBlanket(player.pos, 0.6);
+  camera.getWorldDirection(_camFwd);
+  camera.getWorldPosition(_camPos);
+  for (let i = 0; i < ants.length; i++) {
+    const a = ants[i];
+    if (!a.alive) continue;
+    const T = a.T;
+    const p = a.root.position;
+    a.life += dt;
+    const pdx = px - p.x, pdz = pz - p.z;
+    const pdist = Math.hypot(pdx, pdz);
+    const dx = pdx, dz = pdz, dist = pdist;
+    const blanketFree = blanketFreeFor(a, blanketOpen);
+
+    if (a.hitFlash > 0 || a.rage) {
+      a.hitFlash = Math.max(0, a.hitFlash - dt * 6);
+      a.body.scale.setScalar(1 + a.hitFlash * 0.25);
+      const h = a.hitFlash * 0.7, r = a.rage ? 0.3 + Math.sin(t * 10 + a.seed) * 0.12 : 0;
+      a.mat.emissive.setRGB(h + r, h, h);
+    }
+    if (T.queen && a.hp < a.maxHp) {
+      const rate = (t - a.lastHit > QUEEN_CALM_DELAY ? QUEEN_REGEN_CALM : QUEEN_REGEN_HURT) * a.qb.regen;
+      a.hp = Math.min(a.maxHp, a.hp + a.maxHp * rate * dt);
+      updateHpBar(a);
+      if (Math.random() < dt * 4) burst(antCenter(a, new THREE.Vector3()).setY(0.6 * a.scale), 1, 0.02, 1, [healPartMat], -1);
+    }
+    if (a.abdMat && T.exploder) a.abdMat.emissiveIntensity = 0.6 + Math.sin(t * 8 + a.seed) * 0.4;
+    a.accumT -= dt;
+    if (a.accum > 0.05 && a.accumT <= 0) {
+      addFloater(antCenter(a, new THREE.Vector3()).setY(0.55 * a.scale + 0.25), fmt(a.accum), '#b8ff7a', 14);
+      a.accum = 0; a.accumT = 0.35;
+    }
+
+    let target;
+    if (T.flee) {
+      let ax = -pdx, az = -pdz;
+      const edge = Math.max(Math.abs(p.x), Math.abs(p.z));
+      if (edge > ARENA - 5) { ax += -p.x * 0.6; az += -p.z * 0.6; }
+      target = Math.atan2(ax, az) + Math.sin(t * 3 + a.seed) * 0.8;
+      if (a.life > 16) { removeAnt(a); showMessage('', 'The golden ant escaped...', 1.6); continue; }
+      const around = avoidHeading(p, target, Infinity, antCircles(a, blanketFree));
+      if (around !== null) target = around;
+    } else {
+      const wanderAmt = T.wander || 0.7;
+      const wobble = Math.sin(t * (1.3 + wanderAmt) + a.seed) * wanderAmt;
+      const around = avoidHeading(p, Math.atan2(dx, dz), dist, antCircles(a, blanketFree));
+      target = around !== null ? around : Math.atan2(dx, dz) + wobble * Math.min(1, dist / 6);
+    }
+    const turn = T.queen ? 1.5 : 5 + (T.wander || 0) * 2;
+    const diff = wrapAngle(target - a.heading);
+    a.heading += Math.max(-turn * dt, Math.min(turn * dt, diff));
+
+    let sx = 0, sz = 0;
+    if (!T.queen) {
+      for (let j = 0; j < ants.length; j++) {
+        if (i === j) continue;
+        const b = ants[j];
+        const ox = p.x - b.root.position.x, oz = p.z - b.root.position.z;
+        const r = 0.35 * (a.scale + b.scale);
+        const d2 = ox * ox + oz * oz;
+        if (d2 < r * r && d2 > 1e-4) { const d = Math.sqrt(d2); sx += ox / d * (r - d); sz += oz / d * (r - d); }
+      }
+    }
+
+    let speed = a.speed;
+    if (a.slowed > 0) { a.slowed -= dt; speed *= 0.45; }
+    if (T.flier) {
+      p.y = 0.9 + Math.sin(t * 3 + a.seed) * 0.15;
+      const wings = a.body.userData.wings;
+      if (wings) for (const wg of wings) wg.rotation.y = wg.userData.side * Math.sin(t * 40 + a.seed) * 0.6;
+    }
+    if (T.ranged && pdist < 9) {
+      speed = 0;
+      a.heading = Math.atan2(pdx, pdz);
+      a.spitCd -= dt;
+      if (a.spitCd <= 0) { a.spitCd = 2.2 + Math.random() * 0.8; spit(a); }
+    }
+    if (T.jumper) {
+      a.leapCd -= dt;
+      if (a.leapT <= 0 && a.leapCd <= 0 && dist < 12 && dist > 2) { a.leapT = 0.55; a.leapCd = 1.6 + Math.random() * 1.4; }
+      if (a.leapT > 0) {
+        a.leapT = Math.max(0, a.leapT - dt);
+        speed *= 3.5;
+        p.y = Math.sin((1 - a.leapT / 0.55) * Math.PI) * 0.9 * a.scale;
+      } else p.y = 0;
+    }
+    if (T.charger) {
+      a.chargeCd -= dt;
+      if (a.windT <= 0 && a.chargeT <= 0 && a.chargeCd <= 0 && dist < 10 && dist > 3) a.windT = CHARGE_WINDUP;
+      if (a.windT > 0) {
+        // rears up and glows red, aiming at you
+        a.windT -= dt;
+        speed = 0;
+        a.heading = Math.atan2(pdx, pdz);
+        const glow = 0.35 + Math.sin(t * 30) * 0.25;
+        a.mat.emissive.setRGB(glow, glow * 0.15, 0);
+        a.body.position.x = Math.sin(t * 60) * 0.02;
+        if (a.windT <= 0) { a.chargeT = CHARGE_TIME; a.chargeHeading = a.heading; sfx.stomp(); }
+      } else if (a.chargeT > 0) {
+        // runs straight in a locked direction, so you can sidestep it
+        a.chargeT -= dt;
+        speed *= CHARGE_SPEED;
+        a.heading = a.chargeHeading;
+        if (Math.random() < dt * 20) burst(p.clone().setY(0.05), 1, 0.03, 1, [dirtPartMat]);
+        if (a.chargeT <= 0) stopCharge(a);
+      }
+    }
+    if (T.dodger) {
+      a.dodgeCd -= dt;
+      if (a.dodgeT > 0) {
+        a.dodgeT -= dt;
+        p.x += a.dodgeX * 9 * dt; p.z += a.dodgeZ * 9 * dt;
+      } else if (a.dodgeCd <= 0) {
+        antCenter(a, _c);
+        _tmp.subVectors(_c, _camPos);
+        const d = _tmp.length();
+        if (d < 30 && _tmp.dot(_camFwd) / d > Math.cos(Math.atan2(0.7 * a.scale, d))) {
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const fl = Math.hypot(_camFwd.x, _camFwd.z) || 1;
+          a.dodgeX = (_camFwd.z / fl) * side; a.dodgeZ = (-_camFwd.x / fl) * side;
+          a.dodgeT = 0.22; a.dodgeCd = 1.4 + Math.random();
+        }
+      }
+    }
+    if (T.webs) {
+      a.webCd -= dt;
+      if (a.webCd <= 0 && pdist < 16) { a.webCd = 2.5 + Math.random() * 1.5; spinWeb(p.x, p.z); }
+    }
+    if (T.healer) {
+      a.healCd -= dt;
+      if (a.healCd <= 0) {
+        a.healCd = 2.5;
+        let healed = 0;
+        for (const b of ants) {
+          if (b === a || !b.alive || b.hp >= b.maxHp) continue;
+          if (Math.hypot(b.root.position.x - p.x, b.root.position.z - p.z) > 4.5) continue;
+          b.hp = Math.min(b.maxHp, b.hp + b.maxHp * 0.3);
+          updateHpBar(b);
+          burst(antCenter(b, new THREE.Vector3()), 4, 0.03, 1.2, [healPartMat], -1);
+          healed++;
+        }
+        if (healed) { addRing(p, 4.5, 0x7aff9a); sfx.heal(); }
+      }
+    }
+
+    p.x += Math.sin(a.heading) * speed * dt + sx * 3 * dt;
+    p.z += Math.cos(a.heading) * speed * dt + sz * 3 * dt;
+    const lim = ARENA - 0.3;
+    p.x = Math.max(-lim, Math.min(lim, p.x));
+    p.z = Math.max(-lim, Math.min(lim, p.z));
+    collideAnt(a, blanketFree);
+    a.root.rotation.y = a.heading;
+
+    a.walk += Math.max(speed, 0.6) * dt * 14 / a.scale;
+    for (const L of a.legs) {
+      const sw = Math.sin(a.walk + L.group * Math.PI) * 0.38;
+      const lift = Math.max(0, Math.cos(a.walk + L.group * Math.PI)) * 0.25;
+      const ry = L.base + sw;
+      L.pivot.rotation.y = L.side > 0 ? ry : Math.PI - ry;
+      L.pivot.position.y = -0.02 + lift * 0.05;
+    }
+    a.body.position.y = 0.2 + Math.abs(Math.sin(a.walk)) * 0.012;
+
+    if (T.queen) {
+      a.spawnCd -= dt;
+      if (a.spawnCd <= 0 && ants.length < MAX_ALIVE) {
+        a.spawnCd = a.qb.spawnCd;
+        for (let k = 0; k < a.qb.brood; k++) {
+          const kid = queenTier(state.wave) >= 2 && Math.random() < 0.4 ? pickSpecies(state.wave) : (Math.random() < 0.5 ? 'worker' : 'runner');
+          spawnAnt(kid, p);
+        }
+      }
+    }
+
+    if (T.flee || T.ranged) continue;
+    const reach = 0.5 + 0.28 * a.scale;
+    a.biteCd -= dt;
+    const stomping = (!player.onGround && player.airSafe) || player.stompGrace > 0;
+    if (pdist < reach && player.pos.y < 0.7 * a.scale && !stomping) {
+      if (T.queen) {
+        if (a.biteCd <= 0) {
+          a.biteCd = 1.4;
+          hurtPlayer(antDmg(a));
+          sfx.bite();
+          const nx = -pdx / (pdist || 1), nz = -pdz / (pdist || 1);
+          player.vel.x -= nx * 14; player.vel.z -= nz * 14; player.vel.y = 5; player.onGround = false; player.airSafe = false;
+          player.shake = 0.6;
+        }
+      } else if (T.exploder) {
+        detonate(a);
+      } else {
+        removeAnt(a);
+        hurtPlayer(antDmg(a));
+        sfx.bite();
+        if (T.bleeds) startBleed();
+        if (a.chargeT > 0) {
+          const nx = pdx / (pdist || 1), nz = pdz / (pdist || 1);
+          player.vel.x += nx * CHARGE_KNOCK; player.vel.z += nz * CHARGE_KNOCK; player.vel.y = 4; player.onGround = false; player.airSafe = false;
+          player.shake = Math.max(player.shake, 0.6);
+          showMessage('', 'CHARGED!', 1);
+        }
+        if (T.glue && player.weapon !== 'spray' && player.weapon !== 'laser') {
+          player.jam = player.weapon; player.jamT = 2.5;
+          sfx.glue();
+          showMessage('GUMMED UP!', 'Termite glue jammed your gun. Switch weapons or wait', 1.6);
+        }
+        spawnScreenAnt(a);
+        player.shake = Math.max(player.shake, 0.2 + T.dmg / 60);
+      }
+    }
+  }
+  ants = ants.filter(a => a.alive);
+}
+
+function updateScreenAnts(dt) {
+  const cx = W / 2, cy = H / 2;
+  for (const a of screenAnts) {
+    a.walk += dt * a.speed * 0.12;
+    const toC = Math.atan2(cy - a.y, cx - a.x);
+    const dC = Math.hypot(cx - a.x, cy - a.y);
+    let steer = Math.sin(state.time * 2.2 + a.seed) * 2.2;
+    if (dC > Math.min(W, H) * 0.35) steer += wrapAngle(toC - a.ang) * 2.5;
+    a.ang += steer * dt;
+    a.x += Math.cos(a.ang) * a.speed * dt;
+    a.y += Math.sin(a.ang) * a.speed * dt;
+    if (a.x < 20) { a.x = 20; a.ang = Math.PI - a.ang; }
+    if (a.x > W - 20) { a.x = W - 20; a.ang = Math.PI - a.ang; }
+    if (a.y < 20) { a.y = 20; a.ang = -a.ang; }
+    if (a.y > H - 20 && Math.sin(a.ang) > 0) { a.ang = -a.ang; }
+    hurtPlayer(a.dps * ANT_DAMAGE_MULT * dt);
+  }
+  for (const s of screenSplats) s.life -= dt;
+  screenSplats = screenSplats.filter(s => s.life > 0);
+}
+
+const _chest = new THREE.Vector3();
+function updateEffects(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    p.v.y -= p.grav * dt;
+    if (p.grow) { p.m.scale.multiplyScalar(1 + p.grow * dt); p.v.multiplyScalar(1 - 2.2 * dt); }
+    p.m.position.addScaledVector(p.v, dt);
+    if (p.m.position.y < 0.02) { p.m.position.y = 0.02; if (p.grav > 0) p.v.set(0, 0, 0); }
+    if (p.life <= 0) { scene.remove(p.m); particles.splice(i, 1); }
+  }
+  for (let i = tracers.length - 1; i >= 0; i--) {
+    tracers[i].life -= dt;
+    if (tracers[i].life <= 0) { scene.remove(tracers[i].line); tracers[i].line.geometry.dispose(); tracers.splice(i, 1); }
+  }
+  for (let i = mines.length - 1; i >= 0; i--) {
+    const b = mines[i];
+    b.fuse -= dt;
+    // blinks and beeps faster as the fuse runs out
+    const rate = 1.5 + (1 - b.fuse / MINE_FUSE) * 9;
+    const on = Math.sin(state.time * rate * Math.PI * 2) > 0;
+    b.lamp.material.color.setHex(on ? 0xff2a1a : 0x401010);
+    b.ring.material.opacity = 0.2 + (1 - b.fuse / MINE_FUSE) * 0.4;
+    b.beepT -= dt;
+    if (b.beepT <= 0) { b.beepT = 1 / rate; sfx.beep(); }
+    const mp = b.m.position;
+    const muncher = ants.find(a => a.alive && a.T.termite &&
+      Math.hypot(a.root.position.x - mp.x, a.root.position.z - mp.z) < 0.5 + 0.4 * a.scale);
+    if (muncher) {
+      b.eaten = (b.eaten || 0) + dt;
+      if (Math.random() < dt * 12) burst(mp.clone().setY(0.08), 2, 0.025, 1.2, [dirtPartMat]);
+      if (b.eaten >= MINE_EAT_TIME) {
+        burst(mp.clone().setY(0.1), 10, 0.03, 1.8, [dirtPartMat]);
+        addFloater(mp.clone().setY(0.6), 'MINE EATEN', '#eadcbc', 13);
+        scene.remove(b.m);
+        mines.splice(i, 1);
+        continue;
+      }
+    }
+    if (b.fuse <= 0) {
+      explosion(mp.clone().setY(0.15), { radius: mineRadius(), antDmg: mineDmg(), kind: 'mine' });
+      scene.remove(b.m);
+      mines.splice(i, 1);
+    }
+  }
+  for (let i = shells.length - 1; i >= 0; i--) {
+    const s = shells[i];
+    s.life -= dt;
+    s.v.y -= 14 * dt;
+    s.m.position.addScaledVector(s.v, dt);
+    s.m.rotation.x += dt * 10;
+    let boom = s.m.position.y <= 0.1 || s.life <= 0 || Math.abs(s.m.position.x) > ARENA || Math.abs(s.m.position.z) > ARENA;
+    if (!boom) for (const a of ants) {
+      if (!a.alive) continue;
+      antCenter(a, _c);
+      if (_c.distanceTo(s.m.position) < 0.35 * a.scale + 0.15) { boom = true; break; }
+    }
+    if (boom) {
+      explosion(s.m.position.clone().setY(Math.max(0.1, s.m.position.y)), { radius: pRadius(), antDmg: pDmg(), color: 0xff9a3a });
+      scene.remove(s.m);
+      shells.splice(i, 1);
+    }
+  }
+  for (let i = bolts.length - 1; i >= 0; i--) {
+    const b = bolts[i];
+    b.life -= dt;
+    b.g.visible = b.life > 0.12 || Math.random() < 0.6;
+    if (b.life <= 0) { disposeBolt(b); bolts.splice(i, 1); }
+  }
+  updateTraps(dt);
+  updateWebs(dt);
+  // blood, scorch and acid marks shrink away after a while
+  for (let i = decals.length - 1; i >= 0; i--) {
+    const d = decals[i];
+    const age = state.time - d.userData.born;
+    if (age < d.userData.life) continue;
+    const k = 1 - (age - d.userData.life) / DECAL_FADE;
+    if (k <= 0) { scene.remove(d); decals.splice(i, 1); continue; }
+    d.scale.copy(d.userData.s0).multiplyScalar(k);
+  }
+  _chest.set(player.pos.x, player.pos.y + 1.2, player.pos.z);
+  for (let i = spits.length - 1; i >= 0; i--) {
+    const s = spits[i];
+    s.life -= dt;
+    s.v.y -= 9 * dt;
+    s.m.position.addScaledVector(s.v, dt);
+    if (s.m.position.distanceTo(_chest) < 0.75) {
+      hurtPlayer(s.dmg);
+      sfx.spit();
+      addScreenSplat(W * (0.3 + Math.random() * 0.4), H * (0.3 + Math.random() * 0.4), 60 + Math.random() * 40, true);
+      scene.remove(s.m); spits.splice(i, 1); continue;
+    }
+    if (s.m.position.y < 0.05 || s.life <= 0) {
+      addFlatDecal(acidDecalMat, s.m.position.x, s.m.position.z, 0.25);
+      burst(s.m.position.clone().setY(0.1), 5, 0.03, 1.5, [healPartMat]);
+      scene.remove(s.m); spits.splice(i, 1);
+    }
+  }
+  for (let i = blasts.length - 1; i >= 0; i--) {
+    const b = blasts[i];
+    b.life -= dt;
+    const k = 1 - b.life / 0.4;
+    b.ball.scale.setScalar(0.3 + k * b.R);
+    b.ball.material.opacity = 0.85 * (1 - k);
+    if (b.life <= 0) { scene.remove(b.ball); b.ball.material.dispose(); blasts.splice(i, 1); }
+  }
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const r = rings[i];
+    r.life -= dt;
+    const k = 1 - r.life / r.max;
+    r.m.scale.setScalar(0.2 + k * r.radius);
+    r.m.material.opacity = 0.8 * (1 - k);
+    if (r.life <= 0) { scene.remove(r.m); r.m.material.dispose(); rings.splice(i, 1); }
+  }
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    floaters[i].life -= dt;
+    floaters[i].pos.y += dt * 0.9;
+    if (floaters[i].life <= 0) floaters.splice(i, 1);
+  }
+  blastLight.intensity = Math.max(0, blastLight.intensity - dt * 200);
+}
+
+function updateWaves(dt) {
+  if (state.goldenTimer > 0) {
+    state.goldenTimer -= dt;
+    if (state.goldenTimer <= 0) spawnAnt('golden');
+  }
+  if (state.toSpawn.length) {
+    state.spawnTimer -= dt;
+    if (state.spawnTimer <= 0 && ants.length < Math.min(state.maxAlive, MAX_ALIVE)) {
+      state.spawnTimer = state.spawnInterval * (0.6 + Math.random() * 0.8);
+      const type = state.toSpawn.shift();
+      const hill = nextHill();
+      spawnAnt(type, null, hill);
+      if (ANT_TYPES[type].swarm) {
+        let n = 1;
+        while (state.toSpawn[0] === type) { spawnAnt(state.toSpawn.shift(), null, hill); n++; }
+        state.spawnTimer += state.spawnInterval * n * 0.5;
+      }
+    }
+  } else if (ants.length === 0 && screenAnts.length === 0 && state.goldenTimer <= 0) {
+    if (state.waveBreak <= 0) {
+      if (state.wave >= MAX_WAVES) { victory(); return; }
+      state.waveBreak = 2;
+      player.hp = Math.min(maxHp(), player.hp + 25);
+      showMessage('WAVE CLEARED', '+25 health · shop opening...', 2);
+    } else {
+      state.waveBreak -= dt;
+      if (state.waveBreak <= 0) openShop();
+    }
+  }
+}
+
+function cdChip(el, label, remaining, total, off = false) {
+  const ready = remaining <= 0;
+  setClass(el, 'cd' + (off ? ' off' : ready ? '' : ' wait'));
+  const i = el.querySelector('i');
+  const pct = off ? 0 : ready ? 100 : (1 - remaining / total) * 100;
+  i.style.width = pct + '%';
+  if (label !== undefined) { const k = 'lbl:' + el.id; if (_cache.get(k) !== label) { _cache.set(k, label); el.childNodes[1].nodeValue = label; } }
+}
+
+function updateHUD(dt) {
+  setHTML(hud.wave, `${state.wave}<small> / ${MAX_WAVES}</small>`);
+  setStyle(hud.waveprog, 'width', `${Math.max(0, Math.min(1, 1 - antsRemaining() / state.waveTotal)) * 100}%`);
+  setText(hud.score, state.score.toLocaleString());
+  setText(hud.sugar, String(state.sugar));
+  setText(hud.antsleft, String(antsRemaining()));
+
+  const mh = maxHp();
+  const hpPct = Math.max(0, player.hp / mh) * 100;
+  setText(hud.hptxt, `${Math.ceil(Math.max(0, player.hp))} / ${mh}`);
+  setStyle(hud.hpfill, 'width', hpPct + '%');
+  setStyle(hud.stfill, 'width', `${Math.max(0, player.stamina / maxStamina()) * 100}%`);
+  setClass(hud.stbar, 'bar thin' + (player.tired ? ' tired' : ''));
+  setStyle(hud.hpfill, 'background', hpPct > 50 ? 'linear-gradient(90deg,#3ddc4a,#a6f05a)' : hpPct > 25 ? 'linear-gradient(90deg,#e0b020,#f0d050)' : 'linear-gradient(90deg,#d02020,#f05040)');
+
+  cdChip(hud.cdShoe, undefined, player.meleeCd, SHOE_CD);
+  cdChip(hud.cdSlap, undefined, player.slapCd, 0.7);
+  cdChip(hud.cdMine, `Mine x${player.mines}`, player.mineCd, mineCooldown(), !lv('mine') || player.mines <= 0);
+  cdChip(hud.cdTrap, `Trap x${player.traps}`, player.trapCd, 0.6, !lv('trap') || player.traps <= 0);
+  setStyle(hud.rage, 'display', state.enraged ? 'block' : 'none');
+
+  for (const wDef of WEAPONS) {
+    const s = slotEls[wDef.id];
+    setClass(s.el, 'slot' + (player.weapon === wDef.id ? ' on' : '') + (owned(wDef.id) ? '' : ' locked'));
+    let a = '';
+    if (!owned(wDef.id)) a = 'Locked';
+    else if (wDef.id === 'spray') a = `${Math.round(player.fuel)}% fuel`;
+    else if (wDef.id === 'laser') a = player.heatLock ? 'Overheated' : `${Math.round(player.heat)}% heat`;
+    else if (player.jam === wDef.id) a = 'Gummed!';
+    else a = `${player.ammo[wDef.id]} ammo`;
+    setText(s.a, a);
+  }
+
+  const w = player.weapon;
+  const def = WEAPONS.find(x => x.id === w);
+  setText(hud.wname, def.name + (w === 'blaster' && bStreams() > 1 ? ` · ${bStreams()} streams` : ''));
+  let ammoText, sub, subColor = 'linear-gradient(90deg,#7dff5a,#c8ff6a)', low = false;
+  if (w === 'spray') {
+    ammoText = player.sprayLock ? 'REFILLING' : `${Math.round(player.fuel)}%`;
+    sub = player.fuel / 100; low = player.sprayLock || player.fuel < 20;
+  } else if (w === 'laser') {
+    ammoText = player.heatLock ? 'OVERHEAT' : `${Math.round(player.heat)}° · x${laserHeatMult(player.heat).toFixed(1)} dmg`;
+    sub = player.heat / 100; subColor = 'linear-gradient(90deg,#ffd84a,#ff5a3c)'; low = player.heatLock || player.heat > 80;
+  } else {
+    const mag = MAG[w]();
+    if (player.jam === w) { ammoText = 'GUMMED UP'; sub = 1 - player.jamT / 2.5; subColor = 'linear-gradient(90deg,#c8701e,#eadcbc)'; low = true; }
+    else if (player.reloading > 0) { ammoText = 'RELOADING'; sub = 1 - player.reloading / player.reloadTotal; subColor = 'linear-gradient(90deg,#ffd84a,#ffe680)'; }
+    else { ammoText = `${player.ammo[w]} / ${mag}`; sub = player.ammo[w] / mag; low = player.ammo[w] <= mag * 0.15; }
+    if (w === 'gatling' && player.reloading <= 0 && player.spin < 1 && player.spin > 0) { sub = player.spin; subColor = 'linear-gradient(90deg,#ff7ac0,#ffb0dc)'; }
+  }
+  setText(hud.ammo, ammoText);
+  setStyle(hud.ammo, 'color', low ? '#ff6a4a' : '#fff');
+  setStyle(hud.ammosub, 'width', `${Math.max(0, Math.min(1, sub)) * 100}%`);
+  setStyle(hud.ammosub, 'background', subColor);
+
+  state.comboTimer -= dt;
+  if (state.comboTimer <= 0) state.combo = 0;
+  const mult = Math.min(1 + Math.floor(state.combo / 5), 8);
+  setText(hud.combo, mult > 1 ? `x${mult} COMBO` : '');
+
+  player.damageFlash = Math.max(0, player.damageFlash - dt * 1.5);
+  const lowHp = hpPct < 30 ? 0.3 + Math.sin(state.time * 6) * 0.1 : 0;
+  hud.vignette.style.opacity = Math.min(1, player.damageFlash + lowHp);
+
+  hitTimer -= dt;
+  hud.hitmarker.style.opacity = hitTimer > 0 ? 1 : 0;
+  if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) hud.cm.style.opacity = 0; }
+  hud.warn.style.opacity = screenAnts.length ? 0.6 + Math.sin(state.time * 10) * 0.4 : 0;
+}
+
+function drawOverlay() {
+  octx.clearRect(0, 0, W, H);
+  if (state.mode === 'menu') return;
+  drawFloaters();
+  for (const s of screenSplats) drawScreenSplat(s);
+  for (const a of screenAnts) drawScreenAnt(a);
+  drawMinimap();
+}
+
+// ============================================================
+// LOOP
+// ============================================================
+const clock = new THREE.Clock();
+camera.position.set(0, 1.7, 5);
+
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (state.mode === 'menu') for (const vm of Object.values(VMS)) vm.obj.visible = false;
+  if (state.mode === 'playing') {
+    state.time += dt;
+    updatePlayer(dt);
+    updateAnts(dt);
+    updateScreenAnts(dt);
+    updateWaves(dt);
+    updateEffects(dt);
+    updateHUD(dt);
+  } else if (state.mode === 'menu') {
+    const t = performance.now() * 0.00008;
+    camera.position.set(Math.sin(t) * 12, 4, Math.cos(t) * 12);
+    camera.lookAt(0, 0.5, 0);
+  }
+  windUniform.value += dt;
+  for (const c of clouds) {
+    c.a += c.speed * dt;
+    c.sp.position.x = Math.cos(c.a) * c.r;
+    c.sp.position.z = Math.sin(c.a) * c.r;
+  }
+  drawOverlay();
+  composer.render();
+}
+frame();
+</script>
+</body>
+</html>
