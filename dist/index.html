@@ -91,6 +91,12 @@
   #menu .controls b { color: var(--gold); white-space: nowrap; }
   #menu .cta { display: inline-block; font-size: 24px; font-weight: 900; padding: 12px 40px; border-radius: 10px; background: #e8452a; letter-spacing: 2px; animation: pulse 1.4s infinite; }
   #menu .stats { font-size: 22px; margin-bottom: 16px; color: var(--gold); font-weight: 700; }
+  #menu .name-row { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0 auto 18px; }
+  #menu .name-row label { font-size: 13px; letter-spacing: 2px; color: #9ab; text-transform: uppercase; }
+  #menu .name-row input { width: min(280px, 70vw); padding: 10px 14px; border-radius: 8px; border: 2px solid #4a5a30; background: rgba(0,0,0,0.45); color: #e8eedd; font: 700 18px inherit; text-align: center; outline: none; }
+  #menu .name-row input:focus { border-color: var(--gold); }
+  #menu .score-line { font-size: 28px; margin-top: 6px; color: #fff; }
+  #menu .score-line b { color: var(--gold); font-size: 34px; }
   @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 
   #shop { position: fixed; inset: 0; z-index: 11; display: none; align-items: center; justify-content: center; background: rgba(4,8,4,0.9); cursor: default; }
@@ -207,6 +213,10 @@
     <h1>ANT ANNIHILATOR</h1>
     <h2 id="menu-sub">Squish every last ant across 30 waves.</h2>
     <div class="stats" id="menu-stats"></div>
+    <div class="name-row">
+      <label for="player-name">Player name</label>
+      <input id="player-name" type="text" maxlength="24" placeholder="Enter your name" autocomplete="nickname" />
+    </div>
     <div class="controls">
       <b>Mouse</b><span>Look / aim</span>
       <b>Left Click</b><span>Fire</span>
@@ -1842,6 +1852,25 @@ function addScore(base) {
   state.score += base * mult;
 }
 
+// Scoring: each ant has a base score. Killing ants builds a combo; every 5 hits
+// raises the multiplier by 1 (up to 8x). Golden ants and queens give big bonuses.
+// On a win, leftover HP adds HP × 50. The final score is what gets submitted.
+const SCORE_API = 'https://ai-club-arcade.vercel.app/api/scores';
+function playerName() {
+  const el = document.getElementById('player-name');
+  const name = (el?.value || '').trim();
+  return name || 'Anonymous';
+}
+function finalScore(won) {
+  return won ? state.score + Math.round(player.hp) * 50 : state.score;
+}
+function submitScore(score) {
+  const body = JSON.stringify({ playerName: playerName(), score: Number(score) });
+  try {
+    fetch(SCORE_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+  } catch {}
+}
+
 function removeAnt(ant) {
   ant.alive = false;
   scene.remove(ant.root);
@@ -2722,25 +2751,31 @@ function gameOver() {
   sfx.lose();
   document.exitPointerLock();
   beamMesh.visible = beamGlow.visible = false;
+  const score = finalScore(false);
   hud.menuSub.textContent = 'The ants overwhelmed you...';
-  hud.menuStats.innerHTML = `Wave ${state.wave} &nbsp;·&nbsp; ${state.kills} ants squished &nbsp;·&nbsp; Score ${state.score.toLocaleString()}`;
+  hud.menuStats.innerHTML = `Wave ${state.wave} &nbsp;·&nbsp; ${state.kills} ants squished<div class="score-line">Final score <b>${score.toLocaleString()}</b></div>`;
   hud.menuCta.textContent = 'TRY AGAIN';
   hud.menu.style.display = 'flex';
+  submitScore(score);
 }
 
 function victory() {
   state.mode = 'won';
   sfx.wave();
   document.exitPointerLock();
+  const score = finalScore(true);
   hud.menuSub.textContent = 'You wiped out the entire colony!';
-  hud.menuStats.innerHTML = `${state.kills} ants squished &nbsp;·&nbsp; Final score ${(state.score + Math.round(player.hp) * 50).toLocaleString()}`;
+  hud.menuStats.innerHTML = `${state.kills} ants squished<div class="score-line">Final score <b>${score.toLocaleString()}</b></div>`;
   hud.menuCta.textContent = 'PLAY AGAIN';
   hud.menu.style.display = 'flex';
+  submitScore(score);
 }
 
 // ============================================================
 // INPUT
 // ============================================================
+document.getElementById('player-name').addEventListener('click', e => e.stopPropagation());
+document.getElementById('player-name').addEventListener('keydown', e => e.stopPropagation());
 hud.menu.addEventListener('click', () => {
   initAudio();
   document.body.classList.remove('title');
